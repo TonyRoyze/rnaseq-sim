@@ -1,0 +1,125 @@
+[CmdletBinding()]
+param(
+  # Pass the exact version label shown by `rig list` if it includes an
+  # architecture suffix, such as 4.3-x86_64.
+  [string]$RVersion = "4.3.3"
+)
+
+$ErrorActionPreference = "Stop"
+
+if ($env:OS -ne "Windows_NT") {
+  throw "This setup script is for Windows PowerShell."
+}
+
+$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location -LiteralPath $ProjectRoot
+
+function Require-Command {
+  param([Parameter(Mandatory = $true)][string]$Name)
+  $command = Get-Command $Name -ErrorAction SilentlyContinue
+  if (-not $command) {
+    throw "Required command '$Name' was not found. Install it and open a new PowerShell window."
+  }
+  return $command
+}
+
+$git = Require-Command "git"
+& $git.Source lfs version
+if ($LASTEXITCODE -ne 0) {
+  throw "Git LFS is unavailable. Install Git LFS, then run 'git lfs install' and restart PowerShell."
+}
+
+$reference = Join-Path $ProjectRoot "data/DGElist_BRCA.rds"
+if (-not (Test-Path -LiteralPath $reference -PathType Leaf)) {
+  throw "Reference data is missing: $reference. Run 'git lfs pull' from the repository root."
+}
+if ((Get-Item -LiteralPath $reference).Length -lt 1MB) {
+  throw "Reference data is unexpectedly small: $reference. It may still be a Git LFS pointer; run 'git lfs pull'."
+}
+$stream = [System.IO.File]::OpenRead($reference)
+try {
+  $headerBytes = New-Object byte[] 80
+  $headerLength = $stream.Read($headerBytes, 0, $headerBytes.Length)
+} finally {
+  $stream.Dispose()
+}
+$header = [System.Text.Encoding]::UTF8.GetString($headerBytes, 0, $headerLength)
+if ($header.StartsWith("version https://git-lfs.github.com/spec/v1")) {
+  throw "Reference data is still an LFS pointer. Run 'git lfs pull' from the repository root."
+}
+
+$rig = Get-Command "rig" -ErrorAction SilentlyContinue
+$rscript = Get-Command "Rscript.exe" -ErrorAction SilentlyContinue
+if (-not $rig -and -not $rscript) {
+  throw "Neither rig nor Rscript.exe was found. Install R 4.3.3, or install rig and add R 4.3.3 with 'rig add 4.3.3'."
+}
+
+function Invoke-ProjectR {
+  param([Parameter(Mandatory = $true)][string[]]$RCommandArgs)
+
+  if ($script:RigPath) {
+    $invokeArgs = @("run", "-r", $script:RVersion, "--rscript") + $RCommandArgs
+    & $script:RigPath @invokeArgs
+  } else {
+    & $script:RscriptPath @RCommandArgs
+  }
+  if ($LASTEXITCODE -ne 0) {
+    throw "R command failed with exit code $LASTEXITCODE. See the error above."
+  }
+}
+
+$script:RigPath = if ($rig) { $rig.Source } else { $null }
+$script:RscriptPath = if ($rscript) { $rscript.Source } else { $null }
+$script:RVersion = $RVersion
+
+$versionExpression = "cat('R_VERSION=', as.character(getRversion()), '\n', sep='')"
+try {
+  $versionOutput = Invoke-ProjectR -RCommandArgs @("-e", $versionExpression)
+} catch {
+  if ($script:RigPath) {
+    throw "Could not start R version '$RVersion'. Run 'rig list' and retry with the installed 4.3.3 label, for example: .\setup_windows.ps1 -RVersion 4.3-x86_64"
+  }
+  throw
+}
+$versionLine = @($versionOutput) |
+  Where-Object { "$_" -match "^R_VERSION=" } |
+  Select-Object -Last 1
+$actualRVersion = if ($versionLine) { ("$versionLine" -replace "^R_VERSION=", "").Trim() } else { "" }
+if ($actualRVersion -ne "4.3.3") {
+  throw "This project requires R 4.3.3, but the selected R is '$actualRVersion'. Install/select R 4.3.3 with rig, or update PATH to its Rscript.exe. Do not restore this lockfile under a newer R version."
+}
+Write-Host "PASS: selected R $actualRVersion"
+
+if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "renv/activate.R") -PathType Leaf) -or
+    -not (Test-Path -LiteralPath (Join-Path $ProjectRoot "renv.lock") -PathType Leaf)) {
+  throw "renv/activate.R or renv.lock is missing from the project."
+}
+
+Write-Host "Restoring the project library from renv.lock..."
+$restoreExpression = "source('renv/activate.R'); renv::restore(prompt = FALSE)"
+Invoke-ProjectR -RCommandArgs @("-e", $restoreExpression)
+
+$packageExpression = @"
+required <- c('edgeR', 'limma', 'DESeq2', 'DESeq', 'DSS', 'NBPSeq', 'NOISeq', 'ABSSeq', 'ROTS')
+missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing)) stop('Missing required packages: ', paste(missing, collapse = ', '))
+cat('PACKAGE_CHECK=OK\n')
+"@
+$packageOutput = Invoke-ProjectR -RCommandArgs @("-e", $packageExpression)
+if (-not (@($packageOutput) | Where-Object { "$_" -match "^PACKAGE_CHECK=OK" })) {
+  throw "Required package verification did not report success."
+}
+Write-Host "PASS: required simulation packages are available"
+
+$checkOutput = Join-Path $env:TEMP "rnaseq-sim-setup-check"
+$runnerArgs = @(
+  "-f", "scripts/custom_simulation/run_batch.R",
+  "--plan-only", "--n-var", "500",
+  "--shard-index", "1", "--shard-count", "40",
+  "--output", $checkOutput
+)
+Write-Host "Checking the simulation runner and reference data (plan only)..."
+Invoke-ProjectR -RCommandArgs $runnerArgs
+
+Write-Host "Setup checks passed. No datasets were generated by this setup check."
+Write-Host "For the next step, see setup.md."

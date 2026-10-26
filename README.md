@@ -132,6 +132,8 @@ Bioconductor 3.18. Open R from this directory so `.Rprofile` activates the
 project library:
 
 For Windows installation and shard-running instructions, see [setup.md](setup.md).
+Windows users can run [setup_windows.ps1](setup_windows.ps1) to check Git LFS,
+the reference data, R 4.3.3, the restored packages, and the simulation runner.
 
 ```bash
 rig run -r 4.3-arm64

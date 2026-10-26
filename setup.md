@@ -33,7 +33,27 @@ git lfs pull
 Check that `data/DGElist_BRCA.rds` exists and is a real data file, rather than
 a small Git LFS pointer text file.
 
-## 3. Create the project-local R environment
+## 3. Run the automated prerequisite and environment check
+
+From PowerShell in the repository folder, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1
+```
+
+The script checks Git LFS and the reference RDS, selects or validates R 4.3.3,
+restores `renv.lock`, verifies the simulation packages, and previews the
+simulation plan without generating datasets. If `rig list` shows the R
+version with an architecture suffix, pass that exact label, for example:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1 -RVersion 4.3-x86_64
+```
+
+If restore reports a compiler or build-tools error, install Rtools43, restart
+PowerShell, and rerun the setup script.
+
+## 4. Create the project-local R environment
 
 From the repository root, run:
 
@@ -57,7 +77,7 @@ If restore fails while compiling a package, install Rtools43, restart
 PowerShell, and repeat the restore command. If restore reports that R is not
 4.3.3, install/select R 4.3.3 and run the commands again.
 
-## 4. Preview and run a shard
+## 5. Preview and run a shard
 
 Preview the jobs assigned to worker 1 of 4:
 
