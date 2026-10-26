@@ -124,6 +124,26 @@ The SCLC workflow expects the following source files under
 - A Unix-like system for scripts that use `parallel::mclapply`
 - R packages and tested versions listed in **`R_packages.txt`**
 
+### Isolated R environment
+
+This repository uses `renv` to keep its R packages in a project-local library.
+The pinned environment is recorded in `renv.lock` and uses R 4.3.3 with
+Bioconductor 3.18. Open R from this directory so `.Rprofile` activates the
+project library:
+
+```bash
+rig run -r 4.3-arm64
+```
+
+To restore the lockfile on another setup, run `renv::restore()` from the
+project's R session.
+
+The current lockfile uses `dplyr` 1.2.1 because `TCGAbiolinks` 2.30.4 fails to
+load with the listed `dplyr` 1.1.4 (`filter_out` is not exported there). It
+uses DSS 2.48.0 from the Bioconductor 3.17 source archive and the legacy DESeq
+1.36.0 source from Bioconductor 3.9. The `zoo` version written as `1.8.12` in
+`R_packages.txt` is installed as CRAN's `1.8-12`.
+
 The benchmark compares the following methods:
 
 `ABSSeq`, `DESeq`, `DESeq2`, `DSS`, `edgeR.lrt`, `edgeR.qlf`, `NBPSeq`,

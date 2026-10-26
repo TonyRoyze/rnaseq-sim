@@ -7,7 +7,6 @@
 # Local project files
 *.Rproj
 .Renviron
-.Rprofile
 
 # Public and processed datasets
 /datasets/
