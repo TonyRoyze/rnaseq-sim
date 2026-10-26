@@ -165,7 +165,8 @@ atomic_write_csv <- function(x, path) {
 }
 
 resolve_path <- function(path) {
-  if (grepl("^(/|~)", path)) path.expand(path) else file.path(project_root, path)
+  is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)
+  if (is_absolute) path.expand(path) else file.path(project_root, path)
 }
 
 reference_path <- resolve_path(options$reference)

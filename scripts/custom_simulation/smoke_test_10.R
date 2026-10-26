@@ -61,7 +61,8 @@ source("scripts/shared/simulate_custom.R")
 source("scripts/custom_simulation/method_settings.R")
 
 resolve_path <- function(path) {
-  if (grepl("^(/|~)", path)) path.expand(path) else file.path(project_root, path)
+  is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)
+  if (is_absolute) path.expand(path) else file.path(project_root, path)
 }
 reference_path <- resolve_path(config$reference)
 output_root <- resolve_path(config$output)
