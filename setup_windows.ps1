@@ -81,6 +81,26 @@ function Find-InstalledRscript {
   return $null
 }
 
+function Install-RigViaWinget {
+  $winget = Get-Command "winget.exe" -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    throw "The selected R is not R 4.3.3 and rig is unavailable. Install rig with 'winget install --id posit.rig', then rerun this script."
+  }
+  Write-Host "Installing rig with WinGet so the project can use R 4.3.3..."
+  & $winget.Source install --id posit.rig --exact --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) {
+    throw "WinGet could not install rig (exit code $LASTEXITCODE). Check network access and installation permissions, then rerun this script."
+  }
+  $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $env:Path = "$machinePath;$userPath"
+  $installedRig = Get-Command "rig.exe" -ErrorAction SilentlyContinue
+  if ($installedRig) { return $installedRig.Source }
+  $knownRigPath = Join-Path $env:USERPROFILE ".local\bin\rig.exe"
+  if (Test-Path -LiteralPath $knownRigPath -PathType Leaf) { return $knownRigPath }
+  throw "WinGet installed rig, but it is not available in this PowerShell session. Close PowerShell, open a new one, and rerun this script."
+}
+
 $rig = Get-Command "rig" -ErrorAction SilentlyContinue
 if (-not $rig) {
   $knownRigPath = Join-Path $env:USERPROFILE ".local\bin\rig.exe"
@@ -93,31 +113,7 @@ $rscriptPath = if ($rscript) { $rscript.Source } else { Find-InstalledRscript }
 $rigPath = if ($rig -is [System.IO.FileInfo]) { $rig.FullName } elseif ($rig) { $rig.Source } else { $null }
 
 if (-not $rig -and -not $rscriptPath) {
-  $winget = Get-Command "winget.exe" -ErrorAction SilentlyContinue
-  if (-not $winget) {
-    throw "R was not found on PATH or in the standard R 4.3.3 install location, and rig is missing. Install rig with WinGet ('winget install --id posit.rig') or install R 4.3.3, then rerun this script."
-  }
-  Write-Host "R and rig were not found. Installing rig with WinGet..."
-  & $winget.Source install --id posit.rig --exact --accept-package-agreements --accept-source-agreements
-  if ($LASTEXITCODE -ne 0) {
-    throw "WinGet could not install rig (exit code $LASTEXITCODE). Check network access and installation permissions, then rerun this script."
-  }
-
-  # WinGet updates the persistent PATH; refresh this process so rig is usable now.
-  $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-  $env:Path = "$machinePath;$userPath"
-  $rig = Get-Command "rig.exe" -ErrorAction SilentlyContinue
-  if (-not $rig) {
-    $knownRigPath = Join-Path $env:USERPROFILE ".local\bin\rig.exe"
-    if (Test-Path -LiteralPath $knownRigPath -PathType Leaf) {
-      $rig = Get-Item -LiteralPath $knownRigPath
-    }
-  }
-  if (-not $rig) {
-    throw "WinGet installed rig, but it is not available in this PowerShell session. Close PowerShell, open a new one, and rerun this script."
-  }
-  $rigPath = if ($rig -is [System.IO.FileInfo]) { $rig.FullName } else { $rig.Source }
+  $rigPath = Install-RigViaWinget
   Write-Host "Installing project R $RVersion with rig..."
   & $rigPath add $RVersion
   if ($LASTEXITCODE -ne 0) {
@@ -164,7 +160,22 @@ $versionLine = @($versionOutput) |
   Select-Object -Last 1
 $actualRVersion = if ($versionLine) { ("$versionLine" -replace "^R_VERSION=", "").Trim() } else { "" }
 if ($actualRVersion -ne "4.3.3") {
-  throw "This project requires R 4.3.3, but the selected R is '$actualRVersion'. Install/select R 4.3.3 with rig, or update PATH to its Rscript.exe. Do not restore this lockfile under a newer R version."
+  if (-not $script:RigPath) {
+    $script:RigPath = Install-RigViaWinget
+    Write-Host "Installing project R $RVersion with rig..."
+    & $script:RigPath add $RVersion
+    if ($LASTEXITCODE -ne 0) {
+      throw "rig could not install R $RVersion. If this computer has no administrator rights, run 'rig system user-mode', then rerun this script."
+    }
+    $versionOutput = Invoke-ProjectR -RCommandArgs @("-e", $versionExpression)
+    $versionLine = @($versionOutput) |
+      Where-Object { "$_" -match "^R_VERSION=" } |
+      Select-Object -Last 1
+    $actualRVersion = if ($versionLine) { ("$versionLine" -replace "^R_VERSION=", "").Trim() } else { "" }
+  }
+  if ($actualRVersion -ne "4.3.3") {
+    throw "This project requires R 4.3.3, but the selected R is '$actualRVersion'. Use rig to install/select R 4.3.3. Do not change the R version recorded in renv.lock to match a newer R."
+  }
 }
 Write-Host "PASS: selected R $actualRVersion"
 
