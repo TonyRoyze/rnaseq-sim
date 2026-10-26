@@ -48,10 +48,81 @@ if ($header.StartsWith("version https://git-lfs.github.com/spec/v1")) {
   throw "Reference data is still an LFS pointer. Run 'git lfs pull' from the repository root."
 }
 
+function Find-InstalledRscript {
+  $candidatePaths = @()
+  $registryLocations = @(
+    "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\R-core\R64\4.3.3",
+    "Registry::HKEY_CURRENT_USER\SOFTWARE\R-core\R64\4.3.3",
+    "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\R-core\R\4.3.3",
+    "Registry::HKEY_CURRENT_USER\SOFTWARE\R-core\R\4.3.3"
+  )
+  foreach ($location in $registryLocations) {
+    if (Test-Path -LiteralPath $location) {
+      try {
+        $key = Get-Item -LiteralPath $location
+        $installPath = $key.GetValue("InstallPath")
+        if (-not $installPath) { $installPath = $key.GetValue("") }
+        if ($installPath) {
+          $candidatePaths += (Join-Path $installPath "bin\Rscript.exe")
+          $candidatePaths += (Join-Path $installPath "bin\x64\Rscript.exe")
+        }
+      } catch {
+        # Keep searching other registry locations and standard install paths.
+      }
+    }
+  }
+  $candidatePaths += (Join-Path $env:ProgramFiles "R\R-4.3.3\bin\Rscript.exe")
+  $candidatePaths += (Join-Path $env:ProgramFiles "R\R-4.3.3\bin\x64\Rscript.exe")
+  foreach ($candidate in $candidatePaths) {
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+      return (Get-Item -LiteralPath $candidate).FullName
+    }
+  }
+  return $null
+}
+
 $rig = Get-Command "rig" -ErrorAction SilentlyContinue
+if (-not $rig) {
+  $knownRigPath = Join-Path $env:USERPROFILE ".local\bin\rig.exe"
+  if (Test-Path -LiteralPath $knownRigPath -PathType Leaf) {
+    $rig = Get-Item -LiteralPath $knownRigPath
+  }
+}
 $rscript = Get-Command "Rscript.exe" -ErrorAction SilentlyContinue
-if (-not $rig -and -not $rscript) {
-  throw "Neither rig nor Rscript.exe was found. Install R 4.3.3, or install rig and add R 4.3.3 with 'rig add 4.3.3'."
+$rscriptPath = if ($rscript) { $rscript.Source } else { Find-InstalledRscript }
+$rigPath = if ($rig -is [System.IO.FileInfo]) { $rig.FullName } elseif ($rig) { $rig.Source } else { $null }
+
+if (-not $rig -and -not $rscriptPath) {
+  $winget = Get-Command "winget.exe" -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    throw "R was not found on PATH or in the standard R 4.3.3 install location, and rig is missing. Install rig with WinGet ('winget install --id posit.rig') or install R 4.3.3, then rerun this script."
+  }
+  Write-Host "R and rig were not found. Installing rig with WinGet..."
+  & $winget.Source install --id posit.rig --exact --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) {
+    throw "WinGet could not install rig (exit code $LASTEXITCODE). Check network access and installation permissions, then rerun this script."
+  }
+
+  # WinGet updates the persistent PATH; refresh this process so rig is usable now.
+  $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $env:Path = "$machinePath;$userPath"
+  $rig = Get-Command "rig.exe" -ErrorAction SilentlyContinue
+  if (-not $rig) {
+    $knownRigPath = Join-Path $env:USERPROFILE ".local\bin\rig.exe"
+    if (Test-Path -LiteralPath $knownRigPath -PathType Leaf) {
+      $rig = Get-Item -LiteralPath $knownRigPath
+    }
+  }
+  if (-not $rig) {
+    throw "WinGet installed rig, but it is not available in this PowerShell session. Close PowerShell, open a new one, and rerun this script."
+  }
+  $rigPath = if ($rig -is [System.IO.FileInfo]) { $rig.FullName } else { $rig.Source }
+  Write-Host "Installing project R $RVersion with rig..."
+  & $rigPath add $RVersion
+  if ($LASTEXITCODE -ne 0) {
+    throw "rig could not install R $RVersion. If this computer has no administrator rights, run 'rig system user-mode', then rerun this script."
+  }
 }
 
 function Invoke-ProjectR {
@@ -68,18 +139,25 @@ function Invoke-ProjectR {
   }
 }
 
-$script:RigPath = if ($rig) { $rig.Source } else { $null }
-$script:RscriptPath = if ($rscript) { $rscript.Source } else { $null }
+$script:RigPath = $rigPath
+$script:RscriptPath = $rscriptPath
 $script:RVersion = $RVersion
 
 $versionExpression = "cat('R_VERSION=', as.character(getRversion()), '\n', sep='')"
 try {
   $versionOutput = Invoke-ProjectR -RCommandArgs @("-e", $versionExpression)
 } catch {
-  if ($script:RigPath) {
+  if (-not $script:RigPath) { throw }
+  Write-Host "R $RVersion is not available through rig. Installing it now..."
+  & $script:RigPath add $RVersion
+  if ($LASTEXITCODE -ne 0) {
+    throw "rig could not install R $RVersion. If this computer has no administrator rights, run 'rig system user-mode', then rerun this script."
+  }
+  try {
+    $versionOutput = Invoke-ProjectR -RCommandArgs @("-e", $versionExpression)
+  } catch {
     throw "Could not start R version '$RVersion'. Run 'rig list' and retry with the installed 4.3.3 label, for example: .\setup_windows.ps1 -RVersion 4.3-x86_64"
   }
-  throw
 }
 $versionLine = @($versionOutput) |
   Where-Object { "$_" -match "^R_VERSION=" } |
