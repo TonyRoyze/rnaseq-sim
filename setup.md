@@ -41,12 +41,13 @@ From PowerShell in the repository folder, run:
 powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1
 ```
 
-The script checks Git LFS and the reference RDS, searches the standard Windows
-install locations for R 4.3.3, restores `renv.lock`, verifies the simulation
-packages, and previews the simulation plan without generating datasets. If R
-4.3.3 is not available, it uses WinGet to install `rig`, then installs R
-4.3.3. If `rig list` shows the R version with an architecture suffix, pass
-that exact label, for example:
+The script checks that all tracked Git LFS objects are present and all tracked
+data files are downloaded rather than pointer files. It then checks the
+reference RDS, searches the standard Windows install locations for R 4.3.3,
+restores `renv.lock`, verifies the simulation packages, and previews the
+simulation plan without generating datasets. If R 4.3.3 is not available, it
+uses WinGet to install `rig`, then installs R 4.3.3. If `rig list` shows the R
+version with an architecture suffix, pass that exact label, for example:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1 -RVersion 4.3-x86_64

@@ -29,6 +29,34 @@ if ($LASTEXITCODE -ne 0) {
   throw "Git LFS is unavailable. Install Git LFS, then run 'git lfs install' and restart PowerShell."
 }
 
+Write-Host "Checking all Git LFS objects and tracked data files..."
+& $git.Source lfs fsck --objects --pointers --dry-run
+if ($LASTEXITCODE -ne 0) {
+  throw "Git LFS found missing or invalid objects/pointers. Run 'git lfs pull' from the repository root, then rerun this script."
+}
+$lfsPaths = @(& $git.Source lfs ls-files --name-only)
+if ($LASTEXITCODE -ne 0 -or $lfsPaths.Count -eq 0) {
+  throw "Could not list Git LFS files in this repository. Verify Git LFS is installed and the repository is a Git clone."
+}
+foreach ($relativePath in $lfsPaths) {
+  $trackedFile = Join-Path $ProjectRoot "$relativePath"
+  if (-not (Test-Path -LiteralPath $trackedFile -PathType Leaf)) {
+    throw "Git LFS data file is missing: $relativePath. Run 'git lfs pull' from the repository root."
+  }
+  $stream = [System.IO.File]::OpenRead($trackedFile)
+  try {
+    $headerBytes = New-Object byte[] 80
+    $headerLength = $stream.Read($headerBytes, 0, $headerBytes.Length)
+  } finally {
+    $stream.Dispose()
+  }
+  $header = [System.Text.Encoding]::UTF8.GetString($headerBytes, 0, $headerLength)
+  if ($header.StartsWith("version https://git-lfs.github.com/spec/v1")) {
+    throw "Git LFS pointer found instead of downloaded data: $relativePath. Run 'git lfs pull' from the repository root."
+  }
+}
+Write-Host "PASS: checked $($lfsPaths.Count) Git LFS data files"
+
 $reference = Join-Path $ProjectRoot "data/DGElist_BRCA.rds"
 if (-not (Test-Path -LiteralPath $reference -PathType Leaf)) {
   throw "Reference data is missing: $reference. Run 'git lfs pull' from the repository root."
