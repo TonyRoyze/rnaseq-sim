@@ -131,6 +131,8 @@ The pinned environment is recorded in `renv.lock` and uses R 4.3.3 with
 Bioconductor 3.18. Open R from this directory so `.Rprofile` activates the
 project library:
 
+For Windows installation and shard-running instructions, see [setup.md](setup.md).
+
 ```bash
 rig run -r 4.3-arm64
 ```
