@@ -11,9 +11,9 @@ Install these before cloning the repository:
 1. **R 4.3.3 for Windows (64-bit)** from CRAN.
 2. **Git for Windows**.
 3. **Git LFS for Windows**. The reference count data are stored with Git LFS.
-4. **Rtools43**, matching R 4.3, if package installation reports that a
-   package must be compiled from source. Restart PowerShell after installing
-   it.
+4. **Rtools43**, matching R 4.3. Some locked packages may need to be compiled
+   from source during restore. The setup script checks for its `sh.exe`
+   prerequisite before starting `renv::restore()`.
 
 If the lab has restricted internet access, allow R and Git to reach CRAN,
 Bioconductor, Posit Package Manager, and GitHub during setup. Package restore
@@ -53,8 +53,10 @@ version with an architecture suffix, pass that exact label, for example:
 powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1 -RVersion 4.3-x86_64
 ```
 
-If restore reports a compiler or build-tools error, install Rtools43, restart
-PowerShell, and rerun the setup script.
+If setup reports that `sh.exe` is missing, install Rtools43, restart
+PowerShell, and rerun the setup script. If it is already installed in a
+nonstandard location, add its `usr\bin` directory to `PATH` first. For
+example, the standard location is `C:\rtools43\usr\bin`.
 
 ## 4. Create the project-local R environment
 
@@ -76,9 +78,12 @@ Confirm that key packages are available:
 Rscript.exe -e "source('renv/activate.R'); stopifnot(requireNamespace('edgeR', quietly=TRUE), requireNamespace('DESeq2', quietly=TRUE)); cat('Simulation packages are available.\n')"
 ```
 
-If restore fails while compiling a package, install Rtools43, restart
-PowerShell, and repeat the restore command. If restore reports that R is not
-4.3.3, install/select R 4.3.3 and run the commands again.
+If restore fails with `'sh' is not recognized`, install Rtools43, restart
+PowerShell, and rerun `setup_windows.ps1` (or the restore command). This means
+R tried to install a package from source but could not find Rtools' shell. If
+restore later reports a compiler error, confirm that the matching Rtools43
+toolchain is installed. If restore reports that R is not 4.3.3, install/select
+R 4.3.3 and run the commands again.
 
 ## 5. Preview and run a shard
 

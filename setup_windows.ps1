@@ -212,6 +212,30 @@ if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "renv/activate.R") -Pat
   throw "renv/activate.R or renv.lock is missing from the project."
 }
 
+# Some locked CRAN packages may be available only as source packages for this
+# R version. Rtools43 supplies sh.exe (and the compiler toolchain) needed by
+# R CMD INSTALL when renv has to build one of them.
+$shCommand = Get-Command "sh.exe" -ErrorAction SilentlyContinue
+if (-not $shCommand) {
+  $rtoolsSh = "C:\rtools43\usr\bin\sh.exe"
+  if (Test-Path -LiteralPath $rtoolsSh -PathType Leaf) {
+    $rtoolsBin = Split-Path -Parent $rtoolsSh
+    $env:PATH = "$rtoolsBin;$env:PATH"
+    $shCommand = Get-Command "sh.exe" -ErrorAction SilentlyContinue
+  }
+}
+if (-not $shCommand) {
+  throw @"
+Rtools43 is missing or its shell is not on PATH. The locked package restore may
+need to compile a source package (the reported curl failure needs sh.exe).
+Install Rtools43 for R 4.3, then restart PowerShell and rerun this script.
+Download: https://developer.r-project.org/WindowsBuilds/Rtools43/rtools.html
+If Rtools43 is already installed outside C:\rtools43, add its usr\bin folder
+to PATH before running this script.
+"@
+}
+Write-Host "PASS: found sh.exe at $($shCommand.Source)"
+
 Write-Host "Restoring the project library from renv.lock..."
 $restoreExpression = "source('renv/activate.R'); renv::restore(prompt = FALSE)"
 Invoke-ProjectR -RCommandArgs @("-e", $restoreExpression)
