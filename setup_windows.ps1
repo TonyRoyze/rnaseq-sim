@@ -240,13 +240,18 @@ Write-Host "Restoring the project library from renv.lock..."
 $restoreExpression = "source('renv/activate.R'); renv::restore(prompt = FALSE)"
 Invoke-ProjectR -RCommandArgs @("-e", $restoreExpression)
 
-$packageExpression = @"
-required <- c('edgeR', 'limma', 'DESeq2', 'DESeq', 'DSS', 'NBPSeq', 'NOISeq', 'ABSSeq', 'ROTS')
+$packageCheckScript = Join-Path $env:TEMP "rnaseq-sim-package-check-$([guid]::NewGuid().ToString('N')).R"
+@'
+required <- c("edgeR", "limma", "DESeq2", "DESeq", "DSS", "NBPSeq", "NOISeq", "ABSSeq", "ROTS")
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing)) stop('Missing required packages: ', paste(missing, collapse = ', '))
-cat('PACKAGE_CHECK=OK\n')
-"@
-$packageOutput = Invoke-ProjectR -RCommandArgs @("-e", $packageExpression)
+if (length(missing)) stop("Missing required packages: ", paste(missing, collapse = ", "))
+cat("PACKAGE_CHECK=OK\n")
+'@ | Set-Content -LiteralPath $packageCheckScript -Encoding Ascii
+try {
+  $packageOutput = Invoke-ProjectR -RCommandArgs @("-f", $packageCheckScript)
+} finally {
+  Remove-Item -LiteralPath $packageCheckScript -Force -ErrorAction SilentlyContinue
+}
 if (-not (@($packageOutput) | Where-Object { "$_" -match "^PACKAGE_CHECK=OK" })) {
   throw "Required package verification did not report success."
 }
