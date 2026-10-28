@@ -11,7 +11,8 @@ That entry point links the modules in this directory and makes two functions
 available:
 
 1. `estimate_simulation_parameters(real_dge)` filters and estimates means and
-   gene-wise dispersions from a real two-group `edgeR::DGEList`.
+   gene-wise dispersions from a real two-group `edgeR::DGEList`, saving both a
+   base-R method-of-moments estimate and an edgeR estimate.
 2. `simulate_custom_counts(params, ...)` chooses genes and simulation settings,
    generates counts, then returns the count data and known DE truth.
 
@@ -38,6 +39,7 @@ sim <- simulate_custom_counts(
   n_var = 10000,                # genes to simulate
   n_diffexp = 3000,             # DE genes
   count_model = "negative_binomial",
+  dispersion_estimator = "method_of_moments", # or "edgeR"
   dispersion_scale = 1.5,       # multiply estimated dispersions
   library_size_sdlog = 0.25,    # sample-to-sample library factor spread
   fold_change_min = 1.5,        # minimum DE fold-change magnitude
@@ -53,7 +55,14 @@ sim$dge       # edgeR DGEList; simulated counts and sample metadata
 sim$truth     # gene-level DE labels, directions, and fold changes
 sim$samples   # condition, batch, and library factors by sample
 sim$parameters
+sim$parameters$dispersion_estimates # both estimates for each simulated gene
 ```
+
+The method-of-moments estimates use base-R median-ratio size factors and
+within-group sample variation, with negative estimates truncated to zero. They
+are unshrunk and can be noisy with few reference replicates; the edgeR estimates
+are saved beside them for direct inspection. For negative-binomial simulations,
+`dispersion_used` records the selected estimate after applying `dispersion_scale`.
 
 Set `count_model = "poisson"` to remove the negative-binomial dispersion
 component. You can pass explicit per-sample `library_size_factors` or `batch`

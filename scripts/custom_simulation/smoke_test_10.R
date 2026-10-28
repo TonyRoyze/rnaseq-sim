@@ -96,7 +96,7 @@ scenarios$n_var <- config$n_var
 scenarios$n_diffexp <- as.integer(round(config$n_var * scenarios$de_fraction))
 
 reference_hash <- unname(tools::md5sum(reference_path))
-parameter_path <- file.path(output_root, paste0("parameters-", reference_hash, ".rds"))
+parameter_path <- file.path(output_root, paste0("parameters-dispersion-v2-", reference_hash, ".rds"))
 if (file.exists(parameter_path)) {
   simulation_params <- readRDS(parameter_path)$parameters
 } else {
@@ -111,7 +111,7 @@ for (i in seq_len(nrow(scenarios))) {
   scenario <- scenarios[i, , drop = FALSE]
   seed <- as.integer(config$base_seed + i * 101L)
   simulation_path <- file.path(dataset_dir,
-    sprintf("%02d-%s-n%d-seed%d.rds", i, scenario$scenario_id, config$n_var, seed))
+    sprintf("%02d-%s-disp-mom-n%d-seed%d.rds", i, scenario$scenario_id, config$n_var, seed))
   simulation_files[i] <- simulation_path
   if (file.exists(simulation_path)) next
   set.seed(seed)
@@ -121,6 +121,7 @@ for (i in seq_len(nrow(scenarios))) {
     n_var = scenario$n_var,
     n_diffexp = scenario$n_diffexp,
     count_model = scenario$count_model,
+    dispersion_estimator = "method_of_moments",
     dispersion_scale = scenario$dispersion_scale,
     library_size_sdlog = scenario$library_size_sdlog,
     fold_change_min = scenario$fold_change_min,

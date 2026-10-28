@@ -2,7 +2,7 @@
 # design: selected genes, expected-count multipliers, DE truth, and dispersions.
 prepare_simulation_design <- function(
     params, s, n_var, n_diffexp, count_model, dispersion_scale,
-    dispersion_source, library_size_factors, library_size_sdlog,
+    dispersion_source, dispersion_estimator, library_size_factors, library_size_sdlog,
     fold_change_min, fold_change_excess_rate, upregulated_fraction,
     batch, batch_fraction, batch_effect) {
 
@@ -23,35 +23,51 @@ prepare_simulation_design <- function(
   s <- as.integer(s)
   n_var <- as.integer(n_var)
   n_diffexp <- as.integer(n_diffexp)
+  estimator_prefix <- if (dispersion_estimator == "edgeR") "edger" else "mom"
   needed <- "mean_total"
-  if (count_model == "negative_binomial") needed <- c(needed, "dispersion_total")
+  if (count_model == "negative_binomial") {
+    needed <- c(needed, paste0("dispersion_", estimator_prefix, "_total"))
+  }
   if (!all(needed %in% names(params))) {
-    stop("params must contain mean_total and, for negative-binomial counts, dispersion_total.")
+    stop("params must contain mean_total and estimates for the selected dispersion estimator.")
   }
   n_source <- length(params$mean_total)
   if (n_source < n_var) stop("n_var cannot exceed the number of available source genes.")
-  if (count_model == "negative_binomial" && length(params$dispersion_total) != n_source) {
+  if (count_model == "negative_binomial" &&
+      length(params[[paste0("dispersion_", estimator_prefix, "_total")]]) != n_source) {
     stop("Simulation mean and dispersion vectors must have the same length.")
   }
 
   source_index <- sample.int(n_source, n_var)
   baseline_mean <- pmax(as.numeric(params$mean_total[source_index]), 0)
-  if (count_model == "poisson") {
-    dispersion <- rep(1, n_var)
-  } else if (dispersion_source == "total") {
-    dispersion <- params$dispersion_total[source_index]
+  dispersion_field <- function(group) {
+    modern <- paste0("dispersion_", estimator_prefix, "_", group)
+    legacy <- paste0("dispersion_", group)
+    if (modern %in% names(params)) modern else legacy
+  }
+  if (dispersion_source == "total") {
+    dispersion_unscaled <- params[[dispersion_field("total")]][source_index]
   } else {
-    required <- c("dispersion_group1", "dispersion_group2")
+    required <- c(dispersion_field("group1"), dispersion_field("group2"))
     if (!all(required %in% names(params))) {
       stop("dispersion_source='group' requires group-specific dispersions in params.")
     }
-    dispersion <- (params$dispersion_group1[source_index] +
-      params$dispersion_group2[source_index]) / 2
+    dispersion_unscaled <- (params[[required[1]]][source_index] +
+      params[[required[2]]][source_index]) / 2
   }
-  if (count_model == "negative_binomial") {
-    dispersion <- pmax(as.numeric(dispersion) * dispersion_scale, 1e-8)
-  }
-  if (any(!is.finite(baseline_mean)) || any(!is.finite(dispersion))) {
+  dispersion_mom <- if (dispersion_source == "total") {
+    params$dispersion_mom_total[source_index]
+  } else (params$dispersion_mom_group1[source_index] +
+    params$dispersion_mom_group2[source_index]) / 2
+  dispersion_edger <- if (dispersion_source == "total") {
+    params$dispersion_edger_total[source_index]
+  } else (params$dispersion_edger_group1[source_index] +
+    params$dispersion_edger_group2[source_index]) / 2
+  dispersion_unscaled <- as.numeric(dispersion_unscaled)
+  dispersion_used <- if (count_model == "negative_binomial") {
+    pmax(dispersion_unscaled * dispersion_scale, 1e-8)
+  } else rep(1, n_var)
+  if (any(!is.finite(baseline_mean)) || any(!is.finite(dispersion_used))) {
     stop("Estimated means and dispersions must be finite.")
   }
 
@@ -101,7 +117,9 @@ prepare_simulation_design <- function(
     s = s, n_var = n_var, n_diffexp = n_diffexp,
     n_samples = n_samples, condition = condition,
     source_index = source_index, baseline_mean = baseline_mean,
-    dispersion = dispersion, library_size_factors = library_size_factors,
+    dispersion = dispersion_used, dispersion_unscaled = dispersion_unscaled,
+    dispersion_mom = dispersion_mom, dispersion_edger = dispersion_edger,
+    library_size_factors = library_size_factors,
     batch = batch, batch_multiplier = batch_multiplier,
     fold_change = fold_change, direction = direction
   )

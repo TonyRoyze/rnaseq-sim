@@ -12,21 +12,52 @@ Rscript scripts/custom_simulation/run_batch.R --plan-only
 Rscript scripts/custom_simulation/run_batch.R
 ```
 
-The default reference is `data/DGElist_BRCA.rds`, and outputs go to
-`results/custom_simulation/`. Set `--reference PATH` to use another two-group
-count object. The output directory can point to a mounted shared drive.
+The default reference mode uses `data/DGElist_BRCA.rds`, and outputs go to
+`results/custom_simulation/`. The runner supports three reference modes:
+
+- `--reference-mode brca` (default): use only `--reference` (defaults to
+  `data/DGElist_BRCA.rds`).
+- `--reference-mode all`: create a separate job for every reference and
+  scenario combination.
+- `--reference-mode random`: choose one reference reproducibly for each
+  scenario replicate. The chosen reference and checksum are saved in both the
+  result RDS and `manifest.csv`.
+
+The default reference list for `all` and `random` includes BRCA, E-ENAD-34,
+GSE150910, and LUSC. `DGElist_SCLC_Cell2024.rds` is reserved as an independent
+external test set and the runner rejects it as a simulation reference. Override
+the eligible reference list with comma-separated paths:
+
+```sh
+Rscript scripts/custom_simulation/run_batch.R --reference-mode all
+Rscript scripts/custom_simulation/run_batch.R --reference-mode random --replicates 5
+Rscript scripts/custom_simulation/run_batch.R --reference-mode all \
+  --references data/DGElist_BRCA.rds,data/DGElist_LUSC.rds
+```
+
+Every reference must be a two-group edgeR `DGEList` with enough filtered genes
+for `--n-var`. The output directory can point to a mounted shared drive.
+Reference-specific parameter caches are keyed by the input file checksum.
+Both method-of-moments and edgeR gene-wise dispersion estimates are stored in
+the parameter cache and alongside each simulated dataset. The batch runner
+uses method-of-moments by default; select `--dispersion-estimator edgeR` to
+generate a comparison set using the edgeR estimates. The selected estimator and
+both per-gene estimates are recorded in each dataset RDS.
 
 ## Design used
 
 The runner avoids the enormous Cartesian product of every possible parameter.
 It creates a one-factor-at-a-time suite: a baseline plus scenarios that change
-one parameter at a time. There is a negative-binomial and a Poisson family;
+one parameter at a time. Reference mode `all` multiplies each setting by the
+number of selected references; `random` assigns exactly one selected reference
+to each setting replicate. There is a negative-binomial and a Poisson family;
 dispersion scaling is only varied for negative-binomial simulations. The
 settings include sample sizes 3, 5, 10, 30, and 50 per group, dispersion scales
-0.5/1/2, library-size spread, DE proportion, fold-change strength, direction
-balance, outlier fraction, sparsity, and batch effect. This produces 40
-settings at the default values. The baseline is included once in each model
-family.
+0.25/0.5/1/2/4, library-size spread, DE proportion, fold-change strength,
+direction balance, outlier fraction, sparsity, and batch effect. This produces
+42 settings at the default values: 23 negative-binomial and 19 Poisson. The
+negative-binomial baseline (dispersion scale 1) is included once; its dispersion
+sweep adds 0.25, 0.5, 2, and 4. The Poisson family has no dispersion parameter.
 
 Jobs are assigned reproducibly to shards using a greedy workload estimate
 based on `sample size × gene count`. This spreads the larger sample-size runs

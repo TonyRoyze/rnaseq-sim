@@ -8,6 +8,7 @@ simulate_custom_counts <- function(
     count_model = c("negative_binomial", "poisson"),
     dispersion_scale = 1,
     dispersion_source = c("total", "group"),
+    dispersion_estimator = c("method_of_moments", "edgeR"),
     library_size_factors = NULL,
     library_size_sdlog = 0,
     fold_change_min = 2,
@@ -26,6 +27,7 @@ simulate_custom_counts <- function(
   }
   count_model <- match.arg(count_model)
   dispersion_source <- match.arg(dispersion_source)
+  dispersion_estimator <- match.arg(dispersion_estimator)
   validate_simulation_scalar(outlier_fraction, "outlier_fraction", 0, 1)
   validate_simulation_scalar(sparsity, "sparsity", 0, 1)
   if (length(outlier_multiplier) != 2L || any(!is.finite(outlier_multiplier)) ||
@@ -37,7 +39,7 @@ simulate_custom_counts <- function(
   design <- prepare_simulation_design(
     params = params, s = s, n_var = n_var, n_diffexp = n_diffexp,
     count_model = count_model, dispersion_scale = dispersion_scale,
-    dispersion_source = dispersion_source,
+    dispersion_source = dispersion_source, dispersion_estimator = dispersion_estimator,
     library_size_factors = library_size_factors,
     library_size_sdlog = library_size_sdlog,
     fold_change_min = fold_change_min,
@@ -69,6 +71,16 @@ simulate_custom_counts <- function(
     fold_change_group2_vs_group1 = design$fold_change,
     row.names = rownames(counts)
   )
+  dispersion_estimates <- data.frame(
+    gene = rownames(counts),
+    source_gene = truth$source_gene,
+    method_of_moments = design$dispersion_mom,
+    edgeR = design$dispersion_edger,
+    selected_estimator = dispersion_estimator,
+    selected_unscaled = design$dispersion_unscaled,
+    dispersion_used = if (count_model == "negative_binomial") design$dispersion else NA_real_,
+    row.names = rownames(counts)
+  )
   list(
     dge = dge,
     truth = truth,
@@ -76,7 +88,9 @@ simulate_custom_counts <- function(
     parameters = list(
       s = design$s, n_var = design$n_var, n_diffexp = design$n_diffexp,
       count_model = count_model, dispersion = design$dispersion,
-      dispersion_scale = dispersion_scale,
+      dispersion_scale = dispersion_scale, dispersion_source = dispersion_source,
+      dispersion_estimator = dispersion_estimator,
+      dispersion_estimates = dispersion_estimates,
       library_size_factors = design$library_size_factors,
       fold_change = design$fold_change,
       outlier_fraction = outlier_fraction, sparsity = sparsity,
