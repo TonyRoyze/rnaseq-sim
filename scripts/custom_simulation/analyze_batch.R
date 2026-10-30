@@ -10,7 +10,7 @@ project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork
 setwd(project_root)
 
 parse_args <- function(args) {
-  opts <- list(input = "results/custom_simulation",
+  opts <- list(input = "results/custom_simulation_v3.0",
                output = "results/custom_simulation_analysis",
                shard_index = 1L, shard_count = 1L,
                profile = "core", restore = TRUE, plan_only = FALSE)

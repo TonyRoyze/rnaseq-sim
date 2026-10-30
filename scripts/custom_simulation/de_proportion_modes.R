@@ -6,8 +6,9 @@ assign_de_proportions <- function(jobs, mode, proportions, base_seed, n_var) {
     jobs$de_fraction <- rep(proportions, each = nrow(jobs) / length(proportions))
   } else {
     # Repeat draws per replicate. Mode 2 shares draws across count models and
-    # all levels of each varied factor; mode 1 draws for each scenario row.
-    keys <- if (mode == "setting") paste(jobs$replicate, jobs$varied_factor) else
+    # sample sizes with the other factors fixed; mode 1 draws per scenario.
+    setting_id <- if ("de_setting_id" %in% names(jobs)) jobs$de_setting_id else jobs$varied_factor
+    keys <- if (mode == "setting") paste(jobs$replicate, setting_id) else
       paste(jobs$replicate, jobs$scenario_id)
     groups <- unique(keys)
     # Keep this stream separate from count generation and reference selection.

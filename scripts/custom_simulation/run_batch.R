@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# Reproducibly generate and checkpoint a manageable custom-simulation suite.
+# Reproducibly generate and checkpoint the full-factorial simulation suite.
 # Run from any working directory with Rscript scripts/custom_simulation/run_batch.R.
 
 all_args <- commandArgs(trailingOnly = FALSE)
@@ -8,6 +8,8 @@ if (!length(script_arg)) stop("Run this script with Rscript.")
 script_path <- normalizePath(sub("^--file=", "", script_arg[1]), mustWork = TRUE)
 project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork = TRUE)
 setwd(project_root)
+
+simulation_version <- "3.0"
 
 args <- commandArgs(trailingOnly = TRUE)
 parse_args <- function(args) {
@@ -20,18 +22,23 @@ parse_args <- function(args) {
       "data/DGElist_GSE150910.rds",
       "data/DGElist_LUSC.rds"
     ),
-    output = "results/custom_simulation",
+    output = paste0("results/custom_simulation_v", simulation_version),
     shard_index = 1L,
     shard_count = 1L,
     replicates = 1L,
-    de_mode = "setting",
+    de_mode = "fixed",
     de_proportions = c(0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75),
     n_var = 10000L,
     base_seed = 20261024L,
     dispersion_estimator = "method_of_moments",
+    include_imbalance = TRUE,
     restore = TRUE,
     plan_only = FALSE
   )
+  if ("--version" %in% args) {
+    cat("Custom simulation version", simulation_version, "\n")
+    return(NULL)
+  }
   if ("--help" %in% args || "-h" %in% args) {
     cat(paste(
       "Usage: Rscript scripts/custom_simulation/run_batch.R [options]",
@@ -40,20 +47,22 @@ parse_args <- function(args) {
       "  --reference PATH      Real edgeR DGEList RDS (default: data/DGElist_BRCA.rds)",
       "  --reference-mode MODE brca (default), all, or random",
       "  --references PATHS    Comma-separated RDS paths for all/random modes",
-      "  --output PATH         Output directory (default: results/custom_simulation)",
+      paste0("  --output PATH         Output directory (default: results/custom_simulation_v", simulation_version, ")"),
+      "  --version             Print simulation version and exit",
       "  --shard-index N       This shard, starting at 1 (default: 1)",
       "  --shard-count N       Total shards/workers (default: 1)",
       "  --replicates N        Replicates per setting (default: 1)",
-      "  --de-mode MODE        1/combination, 2/setting (default), 3/fixed",
+      "  --de-mode MODE        1/combination, 2/setting, 3/fixed (default)",
       "  --de-proportions LIST Comma-separated DE proportions (default: 0.1,0.2,0.3,0.4,0.5,0.6,0.75)",
       "  --n-var N             Genes per simulated dataset (default: 10000)",
       "  --base-seed N         Base random seed (default: 20261024)",
       "  --dispersion-estimator METHOD  method_of_moments (default) or edgeR",
+      "  --include-imbalance   Include 1:3 and 1:7 splits at each size (default)",
+      "  --no-imbalance        Generate balanced groups only",
       "  --no-restore          Do not run renv::restore() before generating data",
       "  --plan-only           Print the assigned settings and exit",
       "",
-      "Settings use one-factor-at-a-time comparisons around a baseline, with a",
-      "separate Poisson baseline and Poisson sensitivity runs. Shards are",
+      "Settings use a full factorial design across both count models. Shards are",
       "assigned by estimated workload so large sample-size scenarios spread out.",
       sep = "\n"
     ), "\n")
@@ -62,7 +71,13 @@ parse_args <- function(args) {
   i <- 1L
   while (i <= length(args)) {
     key <- args[i]
-    if (key == "--no-restore") {
+    if (key == "--no-imbalance") {
+      opts$include_imbalance <- FALSE
+      i <- i + 1L
+    } else if (key == "--include-imbalance") {
+      opts$include_imbalance <- TRUE
+      i <- i + 1L
+    } else if (key == "--no-restore") {
       opts$restore <- FALSE
       i <- i + 1L
     } else if (key == "--plan-only") {
@@ -125,70 +140,54 @@ parse_args <- function(args) {
 options <- parse_args(args)
 if (is.null(options)) quit(status = 0L)
 
-if (!file.exists("renv/activate.R")) stop("renv/activate.R is missing from the project.")
-source("renv/activate.R")
-if (options$restore) renv::restore(prompt = FALSE)
-if (!requireNamespace("edgeR", quietly = TRUE)) {
-  stop("edgeR is unavailable. Restore the renv environment or install the locked packages.")
-}
-source("scripts/shared/simulate_custom.R")
-
-build_scenarios <- function(n_var) {
-  # One-factor-at-a-time design: each scenario changes one setting from the
-  # model-specific baseline. This keeps the first run tractable and interpretable.
-  baseline <- list(
-    s = 20L, dispersion_scale = 1, library_size_sdlog = 0,
-    de_fraction = 0.30, fold_change_min = 2,
-    upregulated_fraction = 0.50, outlier_fraction = 0,
-    sparsity = 0, batch_fraction = 0.50, batch_effect = 1
-  )
-  rows <- list()
-  add_row <- function(model, id, factor_name, values) {
-    row <- c(list(scenario_id = id, count_model = model, varied_factor = factor_name),
-             utils::modifyList(baseline, values))
-    sizes <- values$group_sizes
-    if (is.null(sizes)) sizes <- c(row$s, row$s)
-    row$group_sizes <- NULL
-    row$n_group1 <- sizes[1]
-    row$n_group2 <- sizes[2]
-    row$n_samples <- sum(sizes)
-    row$s <- if (sizes[1] == sizes[2]) sizes[1] else NA_integer_
-    row$n_diffexp <- as.integer(round(n_var * row$de_fraction))
-    rows[[length(rows) + 1L]] <<- as.data.frame(row, stringsAsFactors = FALSE)
-  }
-  add_family <- function(model) {
-    add_row(model, paste0(model, "_baseline"), "baseline", list())
-    for (sizes in list(c(10L, 30L), c(5L, 35L))) {
-      add_row(model, paste0(model, "_sample_imbalance_", paste(sizes, collapse = "_")),
-              "sample_imbalance", list(group_sizes = sizes))
-    }
-    variations <- list(
-      sample_size = list(s = c(3L, 5L, 10L, 30L, 50L)),
-      library_size_sdlog = list(library_size_sdlog = c(0.25, 0.50)),
-      fold_change_min = list(fold_change_min = c(1, 4)),
-      upregulated_fraction = list(upregulated_fraction = c(0.25, 0.75)),
-      outlier_fraction = list(outlier_fraction = c(0.001, 0.01)),
-      sparsity = list(sparsity = c(0.10, 0.30)),
-      batch_effect = list(batch_effect = c(1.25, 1.50))
+build_scenarios <- function(n_var, include_imbalance = TRUE) {
+  # s denotes the balanced size; each split preserves the total of 2*s.
+  sizes <- do.call(rbind, lapply(c(3L, 5L, 10L, 30L, 50L), function(s) {
+    fractions <- if (include_imbalance) c(0.5, 0.25, 0.125) else 0.5
+    n1 <- as.integer(floor(2 * s * fractions + 0.5))
+    result <- data.frame(s = s, n_group1 = n1, n_group2 = 2L * s - n1,
+                         minority_fraction_target = fractions)
+    result <- result[result$n_group1 >= 3L & result$n_group2 >= 3L, , drop = FALSE]
+    result[!duplicated(result[c("n_group1", "n_group2")]), , drop = FALSE]
+  }))
+  make_family <- function(model) {
+    grid <- expand.grid(
+      size_index = seq_len(nrow(sizes)),
+      fold_change_min = c(1, 2, 4),
+      upregulated_fraction = c(0.25, 0.50, 0.75),
+      library_size_sdlog = c(0, 0.25, 0.50),
+      outlier_fraction = c(0, 0.001, 0.01),
+      sparsity = c(0, 0.10, 0.30),
+      batch_effect = c(1, 1.5),
+      dispersion_scale = if (model == "negative_binomial") c(0.5, 1, 2) else 1,
+      KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE
     )
-    if (model == "negative_binomial") {
-      # The baseline is 1; include lower and higher dispersion multipliers.
-      variations$dispersion_scale <- list(dispersion_scale = c(0.25, 0.5, 2, 4))
-    }
-    for (factor_name in names(variations)) {
-      setting <- names(variations[[factor_name]])[1]
-      for (value in variations[[factor_name]][[1]]) {
-        add_row(model, paste(model, setting, format(value, trim = TRUE), sep = "_"),
-                factor_name, setNames(list(value), setting))
-      }
-    }
+    grid <- cbind(grid, sizes[grid$size_index, , drop = FALSE])
+    grid$size_index <- NULL
+    grid$n_samples <- grid$n_group1 + grid$n_group2
+    grid$count_model <- model
+    grid$design <- "full_factorial"
+    grid$sample_size_baseline <- grid$s
+    grid$s[grid$n_group1 != grid$n_group2] <- NA_integer_
+    grid$varied_factor <- "full_factorial"
+    grid$batch_fraction <- 0.5
+    grid$de_fraction <- 0.3 # Replaced by DE selection before simulation.
+    grid$n_diffexp <- as.integer(round(n_var * grid$de_fraction))
+    # A setting fixes all non-sample factors; mode 2 shares DE across sizes.
+    grid$de_setting_id <- do.call(paste, c(grid[c(
+      "fold_change_min", "upregulated_fraction", "library_size_sdlog",
+      "outlier_fraction", "sparsity", "batch_effect", "dispersion_scale"
+    )], sep = "_"))
+    grid$scenario_id <- paste0(model, "_factorial_g", grid$n_group1, "-", grid$n_group2,
+      "_fc", grid$fold_change_min, "_up", grid$upregulated_fraction,
+      "_lib", grid$library_size_sdlog, "_out", grid$outlier_fraction,
+      "_zero", grid$sparsity, "_batch", grid$batch_effect, "_disp", grid$dispersion_scale)
+    grid
   }
-  add_family("negative_binomial")
-  add_family("poisson")
-
-  scenarios <- do.call(rbind, rows)
+  scenarios <- rbind(make_family("negative_binomial"), make_family("poisson"))
   rownames(scenarios) <- NULL
   scenarios$scenario_index <- seq_len(nrow(scenarios))
+  scenarios$simulation_version <- simulation_version
   scenarios$n_var <- n_var
   scenarios
 }
@@ -227,12 +226,10 @@ reference_table <- data.frame(
   stringsAsFactors = FALSE
 )
 output_root <- resolve_path(options$output)
-dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 shard_label <- sprintf("shard-%03d-of-%03d", options$shard_index, options$shard_count)
 shard_dir <- file.path(output_root, shard_label)
-dir.create(shard_dir, recursive = TRUE, showWarnings = FALSE)
 
-scenarios <- build_scenarios(options$n_var)
+scenarios <- build_scenarios(options$n_var, options$include_imbalance)
 jobs <- scenarios[rep(seq_len(nrow(scenarios)), each = options$replicates), , drop = FALSE]
 jobs$replicate <- rep(seq_len(options$replicates), times = nrow(scenarios))
 source("scripts/custom_simulation/de_proportion_modes.R")
@@ -267,9 +264,10 @@ jobs <- jobs[order(jobs$job_index), , drop = FALSE]
 jobs <- jobs[jobs$shard == options$shard_index, , drop = FALSE]
 manifest_path <- file.path(shard_dir, "manifest.csv")
 if (options$plan_only) {
+  cat("Simulation version:", simulation_version, "\n")
   cat("DE proportion mode:", options$de_mode, "\n")
   cat("Dispersion estimator:", options$dispersion_estimator, "\n")
-  print(jobs[, c("job_index", "scenario_id", "replicate", "count_model", "s", "n_group1", "n_group2", "n_samples",
+  print(jobs[, c("job_index", "scenario_id", "replicate", "count_model", "sample_size_baseline", "s", "n_group1", "n_group2", "n_samples",
                  "reference_id",
                  "dispersion_scale", "library_size_sdlog", "de_mode", "de_fraction",
                  "fold_change_min", "upregulated_fraction", "outlier_fraction",
@@ -281,6 +279,16 @@ if (nrow(jobs) == 0L) {
   cat("No jobs assigned to ", shard_label, ".\n", sep = "")
   quit(status = 0L)
 }
+
+if (!file.exists("renv/activate.R")) stop("renv/activate.R is missing from the project.")
+source("renv/activate.R")
+if (options$restore) renv::restore(prompt = FALSE)
+if (!requireNamespace("edgeR", quietly = TRUE)) {
+  stop("edgeR is unavailable. Restore the renv environment or install the locked packages.")
+}
+source("scripts/shared/simulate_custom.R")
+
+dir.create(shard_dir, recursive = TRUE, showWarnings = FALSE)
 
 load_or_estimate_parameters <- function(cache_path, reference_path, reference_hash) {
   if (file.exists(cache_path)) return(readRDS(cache_path)$parameters)
@@ -412,6 +420,7 @@ for (i in seq_len(nrow(jobs))) {
     )
     temporary_output <- paste0(output_path, ".tmp")
     saveRDS(list(
+      simulation_version = simulation_version,
       scenario = job,
       replicate = job$replicate,
       seed = seed,
