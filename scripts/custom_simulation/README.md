@@ -52,12 +52,24 @@ one parameter at a time. Reference mode `all` multiplies each setting by the
 number of selected references; `random` assigns exactly one selected reference
 to each setting replicate. There is a negative-binomial and a Poisson family;
 dispersion scaling is only varied for negative-binomial simulations. The
-settings include sample sizes 3, 5, 10, 30, and 50 per group, dispersion scales
+settings include balanced sample sizes 3, 5, 10, 20, 30, and 50 per group, dispersion scales
 0.25/0.5/1/2/4, library-size spread, DE proportion, fold-change strength,
 direction balance, outlier fraction, sparsity, and batch effect. This produces
-42 settings at the default values: 23 negative-binomial and 19 Poisson. The
+44 base settings: 24 negative-binomial and 20 Poisson. DE selection is
+applied to these settings using the mode below. The
 negative-binomial baseline (dispersion scale 1) is included once; its dispersion
 sweep adds 0.25, 0.5, 2, and 4. The Poisson family has no dispersion parameter.
+
+The baseline uses 20 samples per group (40 total), a mode-selected DE proportion,
+minimum fold change 2, and upregulated fraction 0.50. DE proportions are
+0.10/0.20/0.30/0.40/0.50/0.60/0.75 and minimum fold changes are 1/2/4.
+A minimum of 1 allows weak effects; DE magnitudes are the minimum plus an
+exponential draw, with reciprocals for downregulated genes.
+Sample imbalance scenarios use 10/30 and 5/35, compared with the 20/20
+baseline, keeping 40 total samples. Other settings stay at baseline in these
+comparisons. Group sizes and total sample counts are recorded in manifests.
+The simulator accepts `group_sizes = c(10, 30)`; omitting it preserves the
+existing `s` samples per group API. For unequal sizes, returned `s` is `NA`.
 
 Jobs are assigned reproducibly to shards using a greedy workload estimate
 based on `sample size × gene count`. This spreads the larger sample-size runs
@@ -190,3 +202,39 @@ storage, so repeated large outputs can outgrow the included quota. Check the
 current [Git LFS billing details](https://docs.github.com/en/billing/concepts/product-billing/git-lfs)
 before committing a large batch. For bigger or frequently changing simulation
 outputs, use shared/object storage and keep a manifest plus checksums in Git.
+
+## DE proportion selection
+
+Use `--de-mode 1`, `--de-mode 2`, or `--de-mode 3` (names below also work).
+All modes use `0.1,0.2,0.3,0.4,0.5,0.6,0.75` unless overridden with
+`--de-proportions 0.1,0.3,0.5`.
+
+1. **combination**: independently select one proportion for each scenario
+   (a combination of parameter values), per replicate. Draws can coincide.
+2. **setting** (default): select one proportion per varied factor, per
+   replicate. All levels of a factor, such as sample size, share that value,
+   including across the Poisson and negative-binomial families. The global
+   baseline has its own draw. For a matched comparison, compare levels within
+   the same factor; the global baseline may have a different DE proportion.
+3. **fixed**: run the entire base setting set at each listed proportion.
+   Each full pass fixes the proportion for every setting and level. Use a
+   single value (e.g. `--de-proportions 0.3`) to fix the whole run to one value.
+
+`--replicates N` repeats the experiment N times. Random modes redraw on each
+replicate, reproducibly from `--base-seed`. Proportions are assigned before
+reference expansion and sharding, so references and workers agree. These modes
+select the proportion; gene identities are still sampled by each simulation.
+The old separate DE-proportion factor sweep is replaced by this mode selection.
+Mode 1/2 creates 44 scenarios per replicate; mode 3 creates 308 with all seven
+proportions, before multiplying by references in reference mode `all`.
+Mode and selected proportion are saved in scenario IDs, manifests, and RDS
+scenario metadata. Existing output datasets are left untouched; use a fresh
+`--output` directory for the new experiment to keep analyses separate.
+
+```sh
+# Default: one DE proportion per factor, shared across its levels
+Rscript scripts/custom_simulation/run_batch.R --de-mode 2 --replicates 3
+
+# Entire suite at every requested DE proportion, with three repetitions
+Rscript scripts/custom_simulation/run_batch.R --de-mode 3 --replicates 3
+```

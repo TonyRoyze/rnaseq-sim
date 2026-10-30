@@ -24,6 +24,8 @@ parse_args <- function(args) {
     shard_index = 1L,
     shard_count = 1L,
     replicates = 1L,
+    de_mode = "setting",
+    de_proportions = c(0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75),
     n_var = 10000L,
     base_seed = 20261024L,
     dispersion_estimator = "method_of_moments",
@@ -42,6 +44,8 @@ parse_args <- function(args) {
       "  --shard-index N       This shard, starting at 1 (default: 1)",
       "  --shard-count N       Total shards/workers (default: 1)",
       "  --replicates N        Replicates per setting (default: 1)",
+      "  --de-mode MODE        1/combination, 2/setting (default), 3/fixed",
+      "  --de-proportions LIST Comma-separated DE proportions (default: 0.1,0.2,0.3,0.4,0.5,0.6,0.75)",
       "  --n-var N             Genes per simulated dataset (default: 10000)",
       "  --base-seed N         Base random seed (default: 20261024)",
       "  --dispersion-estimator METHOD  method_of_moments (default) or edgeR",
@@ -65,18 +69,22 @@ parse_args <- function(args) {
       opts$plan_only <- TRUE
       i <- i + 1L
     } else if (key %in% c("--reference", "--reference-mode", "--references", "--output", "--shard-index", "--shard-count",
-                          "--replicates", "--n-var", "--base-seed", "--dispersion-estimator")) {
+                          "--replicates", "--n-var", "--base-seed", "--dispersion-estimator",
+                          "--de-mode", "--de-proportions")) {
       if (i == length(args)) stop("Missing value for ", key)
       value <- args[i + 1L]
       name <- switch(key,
         "--reference" = "reference", "--output" = "output",
         "--reference-mode" = "reference_mode", "--references" = "references",
         "--shard-index" = "shard_index", "--shard-count" = "shard_count",
+        "--de-mode" = "de_mode", "--de-proportions" = "de_proportions",
         "--replicates" = "replicates", "--n-var" = "n_var",
         "--base-seed" = "base_seed", "--dispersion-estimator" = "dispersion_estimator"
       )
       opts[[name]] <- if (name == "references") {
         trimws(strsplit(value, ",", fixed = TRUE)[[1]])
+      } else if (name == "de_proportions") {
+        suppressWarnings(as.numeric(trimws(strsplit(value, ",", fixed = TRUE)[[1]])))
       } else if (name %in% c("shard_index", "shard_count", "replicates", "n_var", "base_seed")) {
         suppressWarnings(as.integer(value))
       } else value
@@ -101,6 +109,16 @@ parse_args <- function(args) {
   if (!length(opts$references) || any(!nzchar(opts$references))) {
     stop("--references must contain one or more comma-separated paths.")
   }
+  aliases <- c("1" = "combination", "2" = "setting", "3" = "fixed")
+  if (opts$de_mode %in% names(aliases)) opts$de_mode <- unname(aliases[opts$de_mode])
+  if (!opts$de_mode %in% c("combination", "setting", "fixed")) {
+    stop("--de-mode must be 1/combination, 2/setting, or 3/fixed.")
+  }
+  if (!length(opts$de_proportions) || any(!is.finite(opts$de_proportions)) ||
+      any(opts$de_proportions <= 0 | opts$de_proportions >= 1) ||
+      anyDuplicated(opts$de_proportions)) {
+    stop("--de-proportions must contain unique finite proportions strictly between 0 and 1.")
+  }
   opts
 }
 
@@ -119,7 +137,7 @@ build_scenarios <- function(n_var) {
   # One-factor-at-a-time design: each scenario changes one setting from the
   # model-specific baseline. This keeps the first run tractable and interpretable.
   baseline <- list(
-    s = 10L, dispersion_scale = 1, library_size_sdlog = 0,
+    s = 20L, dispersion_scale = 1, library_size_sdlog = 0,
     de_fraction = 0.30, fold_change_min = 2,
     upregulated_fraction = 0.50, outlier_fraction = 0,
     sparsity = 0, batch_fraction = 0.50, batch_effect = 1
@@ -128,16 +146,26 @@ build_scenarios <- function(n_var) {
   add_row <- function(model, id, factor_name, values) {
     row <- c(list(scenario_id = id, count_model = model, varied_factor = factor_name),
              utils::modifyList(baseline, values))
+    sizes <- values$group_sizes
+    if (is.null(sizes)) sizes <- c(row$s, row$s)
+    row$group_sizes <- NULL
+    row$n_group1 <- sizes[1]
+    row$n_group2 <- sizes[2]
+    row$n_samples <- sum(sizes)
+    row$s <- if (sizes[1] == sizes[2]) sizes[1] else NA_integer_
     row$n_diffexp <- as.integer(round(n_var * row$de_fraction))
     rows[[length(rows) + 1L]] <<- as.data.frame(row, stringsAsFactors = FALSE)
   }
   add_family <- function(model) {
     add_row(model, paste0(model, "_baseline"), "baseline", list())
+    for (sizes in list(c(10L, 30L), c(5L, 35L))) {
+      add_row(model, paste0(model, "_sample_imbalance_", paste(sizes, collapse = "_")),
+              "sample_imbalance", list(group_sizes = sizes))
+    }
     variations <- list(
-      sample_size = list(s = c(3L, 5L, 30L, 50L)),
+      sample_size = list(s = c(3L, 5L, 10L, 30L, 50L)),
       library_size_sdlog = list(library_size_sdlog = c(0.25, 0.50)),
-      de_fraction = list(de_fraction = c(0.10, 0.50)),
-      fold_change_min = list(fold_change_min = c(1.25, 4)),
+      fold_change_min = list(fold_change_min = c(1, 4)),
       upregulated_fraction = list(upregulated_fraction = c(0.25, 0.75)),
       outlier_fraction = list(outlier_fraction = c(0.001, 0.01)),
       sparsity = list(sparsity = c(0.10, 0.30)),
@@ -207,6 +235,9 @@ dir.create(shard_dir, recursive = TRUE, showWarnings = FALSE)
 scenarios <- build_scenarios(options$n_var)
 jobs <- scenarios[rep(seq_len(nrow(scenarios)), each = options$replicates), , drop = FALSE]
 jobs$replicate <- rep(seq_len(options$replicates), times = nrow(scenarios))
+source("scripts/custom_simulation/de_proportion_modes.R")
+jobs <- assign_de_proportions(jobs, options$de_mode, options$de_proportions,
+                              options$base_seed, options$n_var)
 jobs$setting_job_index <- seq_len(nrow(jobs))
 if (options$reference_mode == "all") {
   jobs <- jobs[rep(seq_len(nrow(jobs)), each = nrow(reference_table)), , drop = FALSE]
@@ -224,7 +255,7 @@ jobs$reference_id <- reference_table$reference_id[jobs$reference_index]
 jobs$reference <- reference_table$reference[jobs$reference_index]
 jobs$reference_hash <- reference_table$reference_hash[jobs$reference_index]
 jobs$job_index <- seq_len(nrow(jobs))
-jobs$estimated_work <- as.numeric(jobs$s) * options$n_var
+jobs$estimated_work <- as.numeric(jobs$n_samples) * options$n_var
 jobs$shard <- NA_integer_
 shard_load <- rep(0, options$shard_count)
 for (job_index in order(-jobs$estimated_work, jobs$job_index)) {
@@ -236,10 +267,11 @@ jobs <- jobs[order(jobs$job_index), , drop = FALSE]
 jobs <- jobs[jobs$shard == options$shard_index, , drop = FALSE]
 manifest_path <- file.path(shard_dir, "manifest.csv")
 if (options$plan_only) {
+  cat("DE proportion mode:", options$de_mode, "\n")
   cat("Dispersion estimator:", options$dispersion_estimator, "\n")
-  print(jobs[, c("job_index", "scenario_id", "replicate", "count_model", "s",
+  print(jobs[, c("job_index", "scenario_id", "replicate", "count_model", "s", "n_group1", "n_group2", "n_samples",
                  "reference_id",
-                 "dispersion_scale", "library_size_sdlog", "de_fraction",
+                 "dispersion_scale", "library_size_sdlog", "de_mode", "de_fraction",
                  "fold_change_min", "upregulated_fraction", "outlier_fraction",
                  "sparsity", "batch_effect", "estimated_work", "shard")])
   cat("\n", nrow(jobs), " jobs assigned to ", shard_label, "\n", sep = "")
@@ -356,14 +388,14 @@ for (i in seq_len(nrow(jobs))) {
   manifest_rows[[i]] <- record
   write_manifest()
 
-  cat(sprintf("RUN  [%d/%d] %s (%s, s=%d, rep=%d, reference=%s)\n",
-              i, nrow(jobs), job$scenario_id, job$count_model, job$s,
+  cat(sprintf("RUN  [%d/%d] %s (%s, groups=%d/%d, rep=%d, reference=%s)\n",
+              i, nrow(jobs), job$scenario_id, job$count_model, job$n_group1, job$n_group2,
               job$replicate, reference_id))
   tryCatch({
     simulation_params <- get_reference_parameters(reference_path, reference_hash)
     simulation <- simulate_custom_counts(
       params = simulation_params,
-      s = job$s,
+      group_sizes = c(job$n_group1, job$n_group2),
       n_var = options$n_var,
       n_diffexp = job$n_diffexp,
       count_model = job$count_model,

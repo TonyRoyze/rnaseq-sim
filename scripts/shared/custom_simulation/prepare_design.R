@@ -4,7 +4,7 @@ prepare_simulation_design <- function(
     params, s, n_var, n_diffexp, count_model, dispersion_scale,
     dispersion_source, dispersion_estimator, library_size_factors, library_size_sdlog,
     fold_change_min, fold_change_excess_rate, upregulated_fraction,
-    batch, batch_fraction, batch_effect) {
+    batch, batch_fraction, batch_effect, group_sizes = NULL) {
 
   validate_simulation_scalar(s, "s", 1, Inf)
   validate_simulation_scalar(n_var, "n_var", 1, Inf)
@@ -14,7 +14,7 @@ prepare_simulation_design <- function(
   }
   validate_simulation_scalar(dispersion_scale, "dispersion_scale", 0, Inf, FALSE)
   validate_simulation_scalar(library_size_sdlog, "library_size_sdlog", 0, Inf)
-  validate_simulation_scalar(fold_change_min, "fold_change_min", 1, Inf, FALSE)
+  validate_simulation_scalar(fold_change_min, "fold_change_min", 1, Inf)
   validate_simulation_scalar(fold_change_excess_rate, "fold_change_excess_rate", 0, Inf, FALSE)
   validate_simulation_scalar(upregulated_fraction, "upregulated_fraction", 0, 1)
   validate_simulation_scalar(batch_fraction, "batch_fraction", 0, 1)
@@ -71,8 +71,15 @@ prepare_simulation_design <- function(
     stop("Estimated means and dispersions must be finite.")
   }
 
-  n_samples <- 2L * s
-  condition <- factor(rep(c("group1", "group2"), each = s),
+  if (is.null(group_sizes)) group_sizes <- c(s, s)
+  if (!is.numeric(group_sizes) || length(group_sizes) != 2L ||
+      any(!is.finite(group_sizes)) || any(group_sizes < 1) ||
+      any(group_sizes != floor(group_sizes))) {
+    stop("group_sizes must contain two positive whole numbers.")
+  }
+  group_sizes <- as.integer(group_sizes)
+  n_samples <- sum(group_sizes)
+  condition <- factor(rep(c("group1", "group2"), times = group_sizes),
                       levels = c("group1", "group2"))
   if (is.null(library_size_factors)) {
     library_size_factors <- if (library_size_sdlog == 0) rep(1, n_samples) else
@@ -114,7 +121,8 @@ prepare_simulation_design <- function(
   }
 
   list(
-    s = s, n_var = n_var, n_diffexp = n_diffexp,
+    s = if (group_sizes[1] == group_sizes[2]) group_sizes[1] else NA_integer_,
+    group_sizes = group_sizes, n_var = n_var, n_diffexp = n_diffexp,
     n_samples = n_samples, condition = condition,
     source_index = source_index, baseline_mean = baseline_mean,
     dispersion = dispersion_used, dispersion_unscaled = dispersion_unscaled,

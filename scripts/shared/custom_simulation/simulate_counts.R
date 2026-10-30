@@ -20,7 +20,8 @@ simulate_custom_counts <- function(
     batch = NULL,
     batch_fraction = 0.5,
     batch_effect = 1,
-    seed = NULL) {
+    seed = NULL,
+    group_sizes = NULL) {
 
   if (!requireNamespace("edgeR", quietly = TRUE)) {
     stop("Package 'edgeR' is required to construct the simulated DGEList.")
@@ -45,7 +46,8 @@ simulate_custom_counts <- function(
     fold_change_min = fold_change_min,
     fold_change_excess_rate = fold_change_excess_rate,
     upregulated_fraction = upregulated_fraction,
-    batch = batch, batch_fraction = batch_fraction, batch_effect = batch_effect
+    batch = batch, batch_fraction = batch_fraction, batch_effect = batch_effect,
+    group_sizes = group_sizes
   )
   counts <- generate_simulated_count_matrix(
     design, count_model, outlier_fraction, outlier_multiplier, sparsity
@@ -86,7 +88,8 @@ simulate_custom_counts <- function(
     truth = truth,
     samples = samples,
     parameters = list(
-      s = design$s, n_var = design$n_var, n_diffexp = design$n_diffexp,
+      s = design$s, group_sizes = design$group_sizes, n_samples = design$n_samples,
+      n_var = design$n_var, n_diffexp = design$n_diffexp,
       count_model = count_model, dispersion = design$dispersion,
       dispersion_scale = dispersion_scale, dispersion_source = dispersion_source,
       dispersion_estimator = dispersion_estimator,

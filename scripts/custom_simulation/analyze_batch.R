@@ -89,7 +89,10 @@ dataset_info <- lapply(input_files, function(path) {
     path = path,
     dataset_id = sub("\\.rds$", "", basename(path)),
     genes = nrow(object$simulated$dge$counts),
-    samples_per_group = object$scenario$s
+    n_group1 = sum(object$simulated$dge$samples$group == levels(object$simulated$dge$samples$group)[1]),
+    n_group2 = sum(object$simulated$dge$samples$group == levels(object$simulated$dge$samples$group)[2]),
+    n_samples = ncol(object$simulated$dge$counts),
+    samples_per_group = object$simulated$parameters$s
   )
 })
 
@@ -107,8 +110,11 @@ for (dataset_index in seq_along(dataset_info)) {
       method = setting$method,
       setting_id = setting$setting_id,
       samples_per_group = dataset_info[[dataset_index]]$samples_per_group,
+      n_group1 = dataset_info[[dataset_index]]$n_group1,
+      n_group2 = dataset_info[[dataset_index]]$n_group2,
+      n_samples = dataset_info[[dataset_index]]$n_samples,
       genes = dataset_info[[dataset_index]]$genes,
-      estimated_work = dataset_info[[dataset_index]]$samples_per_group *
+      estimated_work = dataset_info[[dataset_index]]$n_samples *
         dataset_info[[dataset_index]]$genes * weight,
       stringsAsFactors = FALSE
     )
