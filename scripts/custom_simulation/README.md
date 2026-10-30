@@ -21,7 +21,7 @@ The default reference mode uses `data/DGElist_BRCA.rds`, and outputs go to
   scenario combination.
 - `--reference-mode random`: choose one reference reproducibly for each
   scenario replicate. The chosen reference and checksum are saved in both the
-  result RDS and `manifest.csv`.
+  result RDS and the append-only `status.csv` log.
 
 The default reference list for `all` and `random` includes BRCA, E-ENAD-34,
 GSE150910, and LUSC. `DGElist_SCLC_Cell2024.rds` is reserved as an independent
@@ -94,9 +94,17 @@ Scenario IDs encode all factor levels and the design is recorded as
 not relabeled. Use a separate `--output` folder if it already contains results
 from the previous one-factor-at-a-time design.
 
-Jobs are assigned reproducibly to shards using a greedy workload estimate
-based on total samples times gene count. `--plan-only` requires no simulation
-packages and does not create output directories or generate datasets.
+The planner retains only the base combinations and at most `--batch-size`
+expanded job records (default 1000). It computes each shard's job IDs directly,
+cycling through blocks of equal sample counts to distribute workload, without
+expanding or sorting the complete experiment. Changing batch size changes
+neither job ownership nor dataset IDs, DE draws, references, or seeds.
+Random DE modes retain one RNG checkpoint per base scenario/setting rather
+than per replicate; this metadata stays bounded by the base design.
+
+`--plan-only` prints exact total/shard counts and up to 10 example jobs. It
+requires no simulation packages, creates no output directories, and does not
+expand the full experiment. Startup and each processing batch print progress.
 
 ## Distribute and resume work
 
@@ -110,10 +118,39 @@ Rscript scripts/custom_simulation/run_batch.R --shard-index 1 --shard-count 4
 On other workers, use the same project version, reference RDS, `--n-var`,
 `--replicates`, `--base-seed`, `--shard-count`, and `--output`, changing only
 `--shard-index` to 2, 3, or 4. Give each worker a distinct shard index. A
-completed dataset is skipped on restart; failed runs remain marked in the
-manifest and are attempted again. Use `--replicates 3` to generate three
+completed dataset is skipped on restart; failed runs are recorded in
+`status.csv` and attempted again. Resume uses completed dataset files rather
+than loading a manifest. The planner also checks sibling shard directories
+under the same output root, so existing v3.0 datasets from the original
+planner can be reused with the same experiment options. Seeds, DE selections,
+and filenames remain compatible, although shard ownership and execution order
+have changed. Stop old workers before restarting with the new planner. Use `--replicates 3` to generate three
 independent datasets per setting. `--no-restore` skips the automatic
 `renv::restore()` when the environment is already prepared.
+
+### Run 100 replicates with bounded memory
+
+```sh
+# Preview worker 1 of 4, without generating datasets
+Rscript scripts/custom_simulation/run_batch.R \
+  --replicates 100 --shard-count 4 --shard-index 1 --plan-only
+
+# Run worker 1; launch workers 2, 3, and 4 separately
+Rscript scripts/custom_simulation/run_batch.R \
+  --replicates 100 --shard-count 4 --shard-index 1 --batch-size 1000
+```
+
+The default design still contains 16,329,600 datasets per reference with 100
+replicates, or 4,082,400 per worker with four shards. Reducing `--batch-size`
+reduces job-record memory without changing the experiment. Count matrices,
+reference data, and R packages also require memory; this setting bounds job
+bookkeeping, not the entire R process.
+
+Each shard appends `running`, `complete`, or `failed` events to `status.csv`.
+The latest event for an `output_file` is its current status; repeated complete
+events on resume are expected. Existing `manifest.csv` files are left untouched
+and are not rewritten. No full pending-job manifest is built. Analysis still
+uses its separate analysis manifest; simulation datasets remain compatible.
 
 ## Ten-dataset method smoke test
 
@@ -188,10 +225,10 @@ Each shard writes into its own directory, for example:
 results/custom_simulation_v3.0/
 ├── parameters-<reference-md5>.rds
 ├── shard-001-of-004/
-│   ├── manifest.csv
+│   ├── status.csv
 │   └── <scenario>-rep001.rds
   └── shard-002-of-004/
-    ├── manifest.csv
+    ├── status.csv
     └── <scenario>-rep001.rds
 ```
 

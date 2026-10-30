@@ -26,6 +26,7 @@ parse_args <- function(args) {
     shard_index = 1L,
     shard_count = 1L,
     replicates = 1L,
+    batch_size = 1000L,
     de_mode = "fixed",
     de_proportions = c(0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75),
     n_var = 10000L,
@@ -51,6 +52,7 @@ parse_args <- function(args) {
       "  --version             Print simulation version and exit",
       "  --shard-index N       This shard, starting at 1 (default: 1)",
       "  --shard-count N       Total shards/workers (default: 1)",
+      "  --batch-size N        Maximum job records in memory (default: 1000)",
       "  --replicates N        Replicates per setting (default: 1)",
       "  --de-mode MODE        1/combination, 2/setting, 3/fixed (default)",
       "  --de-proportions LIST Comma-separated DE proportions (default: 0.1,0.2,0.3,0.4,0.5,0.6,0.75)",
@@ -60,10 +62,10 @@ parse_args <- function(args) {
       "  --include-imbalance   Include 1:3 and 1:7 splits at each size (default)",
       "  --no-imbalance        Generate balanced groups only",
       "  --no-restore          Do not run renv::restore() before generating data",
-      "  --plan-only           Print the assigned settings and exit",
+      "  --plan-only           Print exact totals and a preview, then exit",
       "",
       "Settings use a full factorial design across both count models. Shards are",
-      "assigned by estimated workload so large sample-size scenarios spread out.",
+      "selected before expanding job records; planning and status writes are bounded.",
       sep = "\n"
     ), "\n")
     return(NULL)
@@ -85,7 +87,7 @@ parse_args <- function(args) {
       i <- i + 1L
     } else if (key %in% c("--reference", "--reference-mode", "--references", "--output", "--shard-index", "--shard-count",
                           "--replicates", "--n-var", "--base-seed", "--dispersion-estimator",
-                          "--de-mode", "--de-proportions")) {
+                          "--de-mode", "--de-proportions", "--batch-size")) {
       if (i == length(args)) stop("Missing value for ", key)
       value <- args[i + 1L]
       name <- switch(key,
@@ -93,6 +95,7 @@ parse_args <- function(args) {
         "--reference-mode" = "reference_mode", "--references" = "references",
         "--shard-index" = "shard_index", "--shard-count" = "shard_count",
         "--de-mode" = "de_mode", "--de-proportions" = "de_proportions",
+        "--batch-size" = "batch_size",
         "--replicates" = "replicates", "--n-var" = "n_var",
         "--base-seed" = "base_seed", "--dispersion-estimator" = "dispersion_estimator"
       )
@@ -100,7 +103,7 @@ parse_args <- function(args) {
         trimws(strsplit(value, ",", fixed = TRUE)[[1]])
       } else if (name == "de_proportions") {
         suppressWarnings(as.numeric(trimws(strsplit(value, ",", fixed = TRUE)[[1]])))
-      } else if (name %in% c("shard_index", "shard_count", "replicates", "n_var", "base_seed")) {
+      } else if (name %in% c("shard_index", "shard_count", "replicates", "n_var", "base_seed", "batch_size")) {
         suppressWarnings(as.integer(value))
       } else value
       i <- i + 2L
@@ -108,12 +111,12 @@ parse_args <- function(args) {
       stop("Unknown option: ", key)
     }
   }
-  if (anyNA(unlist(opts[c("shard_index", "shard_count", "replicates", "n_var", "base_seed")]))) {
+  if (anyNA(unlist(opts[c("shard_index", "shard_count", "replicates", "n_var", "base_seed", "batch_size")]))) {
     stop("Numeric options must be whole numbers.")
   }
   if (opts$shard_count < 1L || opts$shard_index < 1L ||
-      opts$shard_index > opts$shard_count || opts$replicates < 1L || opts$n_var < 1L) {
-    stop("Shard values, replicates, and n-var must be positive; shard-index cannot exceed shard-count.")
+      opts$shard_index > opts$shard_count || opts$replicates < 1L || opts$n_var < 1L || opts$batch_size < 1L) {
+    stop("Shard values, replicates, n-var, and batch-size must be positive; shard-index cannot exceed shard-count.")
   }
   if (!opts$reference_mode %in% c("brca", "all", "random")) {
     stop("--reference-mode must be one of: brca, all, random.")
@@ -192,16 +195,14 @@ build_scenarios <- function(n_var, include_imbalance = TRUE) {
   scenarios
 }
 
-atomic_write_csv <- function(x, path) {
-  temporary <- paste0(path, ".tmp")
-  utils::write.csv(x, temporary, row.names = FALSE, na = "")
-  if (!file.rename(temporary, path)) stop("Could not replace manifest: ", path)
-}
-
 resolve_path <- function(path) {
   is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)
   if (is_absolute) path.expand(path) else file.path(project_root, path)
 }
+
+cat("START simulation v", simulation_version, ": building bounded job planner (batch size ",
+    options$batch_size, ")\n", sep = "")
+flush.console()
 
 reference_specs <- if (options$reference_mode == "brca") {
   options$reference
@@ -230,55 +231,24 @@ shard_label <- sprintf("shard-%03d-of-%03d", options$shard_index, options$shard_
 shard_dir <- file.path(output_root, shard_label)
 
 scenarios <- build_scenarios(options$n_var, options$include_imbalance)
-jobs <- scenarios[rep(seq_len(nrow(scenarios)), each = options$replicates), , drop = FALSE]
-jobs$replicate <- rep(seq_len(options$replicates), times = nrow(scenarios))
-source("scripts/custom_simulation/de_proportion_modes.R")
-jobs <- assign_de_proportions(jobs, options$de_mode, options$de_proportions,
-                              options$base_seed, options$n_var)
-jobs$setting_job_index <- seq_len(nrow(jobs))
-if (options$reference_mode == "all") {
-  jobs <- jobs[rep(seq_len(nrow(jobs)), each = nrow(reference_table)), , drop = FALSE]
-  jobs$reference_index <- rep(seq_len(nrow(reference_table)), times = nrow(jobs) / nrow(reference_table))
-} else if (options$reference_mode == "random") {
-  jobs$reference_index <- vapply(jobs$setting_job_index, function(index) {
-    selection_seed <- as.integer((as.double(options$base_seed) + index * 104729) %% .Machine$integer.max)
-    set.seed(selection_seed)
-    sample.int(nrow(reference_table), 1L)
-  }, integer(1))
-} else {
-  jobs$reference_index <- 1L
-}
-jobs$reference_id <- reference_table$reference_id[jobs$reference_index]
-jobs$reference <- reference_table$reference[jobs$reference_index]
-jobs$reference_hash <- reference_table$reference_hash[jobs$reference_index]
-jobs$job_index <- seq_len(nrow(jobs))
-jobs$estimated_work <- as.numeric(jobs$n_samples) * options$n_var
-jobs$shard <- NA_integer_
-shard_load <- rep(0, options$shard_count)
-for (job_index in order(-jobs$estimated_work, jobs$job_index)) {
-  target <- which(shard_load == min(shard_load))[1]
-  jobs$shard[job_index] <- target
-  shard_load[target] <- shard_load[target] + jobs$estimated_work[job_index]
-}
-jobs <- jobs[order(jobs$job_index), , drop = FALSE]
-jobs <- jobs[jobs$shard == options$shard_index, , drop = FALSE]
-manifest_path <- file.path(shard_dir, "manifest.csv")
+source("scripts/custom_simulation/batch_jobs.R")
+cat("Base combinations:", nrow(scenarios), "; DE mode:", options$de_mode, "\n")
+flush.console()
+iterator <- make_job_iterator(scenarios, options, reference_table)
+cat(sprintf("PLAN %.0f datasets total; %.0f assigned to %s\n",
+            iterator$total, iterator$assigned, shard_label))
+flush.console()
+manifest_path <- file.path(shard_dir, "status.csv")
 if (options$plan_only) {
-  cat("Simulation version:", simulation_version, "\n")
-  cat("DE proportion mode:", options$de_mode, "\n")
-  cat("Dispersion estimator:", options$dispersion_estimator, "\n")
-  print(jobs[, c("job_index", "scenario_id", "replicate", "count_model", "sample_size_baseline", "s", "n_group1", "n_group2", "n_samples",
-                 "reference_id",
-                 "dispersion_scale", "library_size_sdlog", "de_mode", "de_fraction",
-                 "fold_change_min", "upregulated_fraction", "outlier_fraction",
-                 "sparsity", "batch_effect", "estimated_work", "shard")])
-  cat("\n", nrow(jobs), " jobs assigned to ", shard_label, "\n", sep = "")
+  cat("Preview (up to 10 assigned jobs):\n")
+  preview <- iterator$next_batch(min(10L, options$batch_size))
+  if (!is.null(preview)) print(preview[c("job_index", "scenario_id", "replicate",
+      "count_model", "n_group1", "n_group2", "de_fraction", "reference_id", "seed")])
   quit(status = 0L)
 }
-if (nrow(jobs) == 0L) {
-  cat("No jobs assigned to ", shard_label, ".\n", sep = "")
-  quit(status = 0L)
-}
+if (iterator$assigned == 0) quit(status = 0L)
+cat("Preparing R dependencies...\n")
+flush.console()
 
 if (!file.exists("renv/activate.R")) stop("renv/activate.R is missing from the project.")
 source("renv/activate.R")
@@ -329,76 +299,36 @@ get_reference_parameters <- function(reference_path, reference_hash) {
   parameters
 }
 
-if (file.exists(manifest_path)) {
-  manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE,
-                              check.names = FALSE)
-} else {
-  manifest <- NULL
-}
-manifest_rows <- lapply(seq_len(nrow(jobs)), function(i) {
-  job <- jobs[i, , drop = FALSE]
-  seed <- as.integer((as.double(options$base_seed) + job$job_index * 1009 + job$replicate) %% .Machine$integer.max)
+# Discover shard directories once; existing files from the previous planner
+# can be resumed even though bounded sharding assigns jobs differently.
+output_dirs <- unique(c(shard_dir, list.dirs(output_root, recursive = FALSE, full.names = TRUE)))
+output_dirs <- output_dirs[grepl("^shard-[0-9]+-of-[0-9]+$", basename(output_dirs))]
+
+run_job <- function(job, completed) {
+  output_name <- job_output_name(job)
+  output_path <- file.path(shard_dir, output_name)
+  seed <- job$seed
   reference_id <- job$reference_id
   reference_path <- job$reference
   reference_hash <- job$reference_hash
-  output_name <- sprintf("%s-%s-disp-%s-rep%03d-n%d-seed%d-ref%s.rds", job$scenario_id,
-                         reference_id, ifelse(options$dispersion_estimator == "method_of_moments", "mom", "edgeR"),
-                         job$replicate, options$n_var, seed,
-                         substr(reference_hash, 1, 8))
   record <- job
-  record$seed <- seed
-  record$dispersion_estimator <- options$dispersion_estimator
-  record$reference <- reference_path
-  record$reference_id <- reference_id
-  record$reference_hash <- reference_hash
-  record$output_file <- file.path(shard_dir, output_name)
-  record$status <- "pending"
-  record$error <- ""
-  if (!is.null(manifest)) {
-    if ("reference_id" %in% names(manifest)) {
-      previous <- manifest[manifest$scenario_id == job$scenario_id &
-        manifest$replicate == job$replicate &
-        manifest$reference_id == reference_id, , drop = FALSE]
-    } else {
-      previous <- manifest[FALSE, , drop = FALSE]
-    }
-    if (nrow(previous)) {
-      record$status <- previous$status[1]
-      if ("error" %in% names(previous)) record$error <- previous$error[1]
-    }
-  }
-  record
-})
-write_manifest <- function() {
-  atomic_write_csv(do.call(rbind, manifest_rows), manifest_path)
-}
-
-for (i in seq_len(nrow(jobs))) {
-  job <- jobs[i, , drop = FALSE]
-  record <- manifest_rows[[i]]
-  output_path <- record$output_file
-  output_name <- basename(output_path)
-  seed <- record$seed
-  reference_id <- job$reference_id
-  reference_path <- job$reference
-  reference_hash <- job$reference_hash
-  if (file.exists(output_path)) {
-    record$status <- "complete"
-    record$error <- ""
-    manifest_rows[[i]] <- record
-    write_manifest()
-    cat("SKIP ", output_name, " (already complete)\n", sep = "")
-    next
-  }
-
+  record$output_file <- output_path
   record$status <- "running"
   record$error <- ""
-  manifest_rows[[i]] <- record
-  write_manifest()
-
-  cat(sprintf("RUN  [%d/%d] %s (%s, groups=%d/%d, rep=%d, reference=%s)\n",
-              i, nrow(jobs), job$scenario_id, job$count_model, job$n_group1, job$n_group2,
+  existing <- file.path(output_dirs, output_name)
+  existing <- existing[file.exists(existing)]
+  if (length(existing)) {
+    record$output_file <- existing[1]
+    record$status <- "complete"
+    append_status(record, manifest_path)
+    cat("SKIP ", output_name, " (already complete)\n", sep = "")
+    return(invisible(NULL))
+  }
+  append_status(record, manifest_path)
+  cat(sprintf("RUN  [%.0f/%.0f] %s (groups=%d/%d, rep=%d, reference=%s)\n",
+              completed + 1, iterator$assigned, job$scenario_id, job$n_group1, job$n_group2,
               job$replicate, reference_id))
+  flush.console()
   tryCatch({
     simulation_params <- get_reference_parameters(reference_path, reference_hash)
     simulation <- simulate_custom_counts(
@@ -437,9 +367,20 @@ for (i in seq_len(nrow(jobs))) {
     record$error <<- conditionMessage(e)
     cat("ERROR ", job$scenario_id, ": ", conditionMessage(e), "\n", sep = "")
   })
-  manifest_rows[[i]] <- record
-  write_manifest()
+  append_status(record, manifest_path)
 }
 
-write_manifest()
-cat("Finished ", shard_label, ". Manifest: ", manifest_path, "\n", sep = "")
+completed <- 0
+repeat {
+  jobs <- iterator$next_batch()
+  if (is.null(jobs)) break
+  cat(sprintf("BATCH %.0f-%.0f of %.0f assigned jobs\n",
+              completed + 1, completed + nrow(jobs), iterator$assigned))
+  flush.console()
+  for (i in seq_len(nrow(jobs))) {
+    run_job(jobs[i, , drop = FALSE], completed)
+    completed <- completed + 1
+  }
+  rm(jobs)
+}
+cat("Finished ", shard_label, ". Status log: ", manifest_path, "\n", sep = "")
