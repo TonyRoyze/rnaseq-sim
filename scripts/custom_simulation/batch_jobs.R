@@ -129,7 +129,24 @@ job_output_name <- function(job) {
 append_status <- function(record, path) {
   # This file is an event log: latest row for an output_file is its status.
   record$updated_at <- format(Sys.time(), '%Y-%m-%dT%H:%M:%OS3%z')
-  has_header <- file.exists(path) && file.info(path)$size > 0
-  utils::write.table(record, file = path, append = has_header, sep = ',',
-                     row.names = FALSE, col.names = !has_header, na = '', qmethod = 'double')
+  # Status logging must never take down a long simulation. Status rows are
+  # written outside the per-job simulation handler, so a transient filesystem
+  # error here previously stopped the whole batch.
+  for (attempt in seq_len(3L)) {
+    written <- tryCatch({
+      has_header <- file.exists(path) && isTRUE(file.info(path)$size > 0)
+      utils::write.table(record, file = path, append = has_header, sep = ',',
+                         row.names = FALSE, col.names = !has_header, na = '', qmethod = 'double')
+      TRUE
+    }, error = function(e) {
+      if (attempt == 3L) {
+        cat('WARNING could not append status.csv: ', conditionMessage(e), '\n', sep = '', file = stderr())
+        flush(stderr())
+      }
+      FALSE
+    })
+    if (written) return(invisible(TRUE))
+    if (attempt < 3L) Sys.sleep(attempt)
+  }
+  invisible(FALSE)
 }
