@@ -9,7 +9,7 @@ script_path <- normalizePath(sub("^--file=", "", script_arg[1]), mustWork = TRUE
 project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork = TRUE)
 setwd(project_root)
 
-simulation_version <- "4.0"
+source("scripts/custom_simulation/version.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 parse_args <- function(args) {
@@ -27,6 +27,9 @@ parse_args <- function(args) {
     shard_count = 1L,
     replicates = 1L,
     batch_size = 1000L,
+    setting_batch = 0L,
+    settings_per_batch = 100L,
+    job_index = 0L,
     de_mode = "fixed",
     underdispersion_model = "generalized_poisson",
     de_proportions = c(0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75),
@@ -53,6 +56,9 @@ parse_args <- function(args) {
       "  --version             Print simulation version and exit",
       "  --shard-index N       This shard, starting at 1 (default: 1)",
       "  --shard-count N       Total shards/workers (default: 1)",
+      "  --setting-batch N    Select a batch of settings (1-based; 0 selects all)",
+      "  --settings-per-batch N Settings per selected batch (default: 100)",
+      "  --job-index N        Regenerate only this original job ID",
       "  --batch-size N        Maximum job records in memory (default: 1000)",
       "  --replicates N        Replicates per setting (default: 1)",
       "  --underdispersion-model MODEL  generalized_poisson (default) or com_poisson",
@@ -88,6 +94,7 @@ parse_args <- function(args) {
       opts$plan_only <- TRUE
       i <- i + 1L
     } else if (key %in% c("--reference", "--reference-mode", "--references", "--output", "--shard-index", "--shard-count",
+                          "--setting-batch", "--settings-per-batch", "--job-index",
                           "--replicates", "--n-var", "--base-seed", "--dispersion-estimator",
                           "--de-mode", "--de-proportions", "--batch-size", "--underdispersion-model")) {
       if (i == length(args)) stop("Missing value for ", key)
@@ -99,6 +106,8 @@ parse_args <- function(args) {
         "--de-mode" = "de_mode", "--de-proportions" = "de_proportions",
         "--underdispersion-model" = "underdispersion_model",
         "--batch-size" = "batch_size",
+        "--setting-batch" = "setting_batch", "--settings-per-batch" = "settings_per_batch",
+        "--job-index" = "job_index",
         "--replicates" = "replicates", "--n-var" = "n_var",
         "--base-seed" = "base_seed", "--dispersion-estimator" = "dispersion_estimator"
       )
@@ -106,7 +115,7 @@ parse_args <- function(args) {
         trimws(strsplit(value, ",", fixed = TRUE)[[1]])
       } else if (name == "de_proportions") {
         suppressWarnings(as.numeric(trimws(strsplit(value, ",", fixed = TRUE)[[1]])))
-      } else if (name %in% c("shard_index", "shard_count", "replicates", "n_var", "base_seed", "batch_size")) {
+      } else if (name %in% c("shard_index", "shard_count", "replicates", "n_var", "base_seed", "batch_size", "setting_batch", "settings_per_batch", "job_index")) {
         suppressWarnings(as.integer(value))
       } else value
       i <- i + 2L
@@ -142,6 +151,9 @@ parse_args <- function(args) {
   }
   if (!opts$underdispersion_model %in% c("generalized_poisson", "com_poisson"))
     stop("--underdispersion-model must be generalized_poisson or com_poisson.")
+  if (anyNA(c(opts$setting_batch, opts$settings_per_batch, opts$job_index)) ||
+      opts$setting_batch < 0 || opts$settings_per_batch < 1 || opts$job_index < 0)
+    stop("Invalid setting batch or job index.")
   opts
 }
 
@@ -334,6 +346,12 @@ completed <- 0
 repeat {
   jobs <- iterator$next_batch()
   if (is.null(jobs)) break
+  if (options$setting_batch > 0L) {
+    setting <- floor((jobs$setting_job_index - 1) / options$replicates) + 1
+    jobs <- jobs[ceiling(setting / options$settings_per_batch) == options$setting_batch, , drop = FALSE]
+  }
+  if (options$job_index > 0L) jobs <- jobs[jobs$job_index == options$job_index, , drop = FALSE]
+  if (!nrow(jobs)) next
   cat(sprintf("BATCH %.0f-%.0f of %.0f assigned jobs\n",
               completed + 1, completed + nrow(jobs), iterator$assigned))
   flush.console()
