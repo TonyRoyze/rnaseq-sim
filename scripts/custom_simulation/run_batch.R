@@ -9,7 +9,7 @@ script_path <- normalizePath(sub("^--file=", "", script_arg[1]), mustWork = TRUE
 project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork = TRUE)
 setwd(project_root)
 
-simulation_version <- "3.0"
+simulation_version <- "4.0"
 
 args <- commandArgs(trailingOnly = TRUE)
 parse_args <- function(args) {
@@ -28,6 +28,7 @@ parse_args <- function(args) {
     replicates = 1L,
     batch_size = 1000L,
     de_mode = "fixed",
+    underdispersion_model = "generalized_poisson",
     de_proportions = c(0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75),
     n_var = 10000L,
     base_seed = 20261024L,
@@ -54,6 +55,7 @@ parse_args <- function(args) {
       "  --shard-count N       Total shards/workers (default: 1)",
       "  --batch-size N        Maximum job records in memory (default: 1000)",
       "  --replicates N        Replicates per setting (default: 1)",
+      "  --underdispersion-model MODEL  generalized_poisson (default) or com_poisson",
       "  --de-mode MODE        1/combination, 2/setting, 3/fixed (default)",
       "  --de-proportions LIST Comma-separated DE proportions (default: 0.1,0.2,0.3,0.4,0.5,0.6,0.75)",
       "  --n-var N             Genes per simulated dataset (default: 10000)",
@@ -87,7 +89,7 @@ parse_args <- function(args) {
       i <- i + 1L
     } else if (key %in% c("--reference", "--reference-mode", "--references", "--output", "--shard-index", "--shard-count",
                           "--replicates", "--n-var", "--base-seed", "--dispersion-estimator",
-                          "--de-mode", "--de-proportions", "--batch-size")) {
+                          "--de-mode", "--de-proportions", "--batch-size", "--underdispersion-model")) {
       if (i == length(args)) stop("Missing value for ", key)
       value <- args[i + 1L]
       name <- switch(key,
@@ -95,6 +97,7 @@ parse_args <- function(args) {
         "--reference-mode" = "reference_mode", "--references" = "references",
         "--shard-index" = "shard_index", "--shard-count" = "shard_count",
         "--de-mode" = "de_mode", "--de-proportions" = "de_proportions",
+        "--underdispersion-model" = "underdispersion_model",
         "--batch-size" = "batch_size",
         "--replicates" = "replicates", "--n-var" = "n_var",
         "--base-seed" = "base_seed", "--dispersion-estimator" = "dispersion_estimator"
@@ -137,63 +140,15 @@ parse_args <- function(args) {
       anyDuplicated(opts$de_proportions)) {
     stop("--de-proportions must contain unique finite proportions strictly between 0 and 1.")
   }
+  if (!opts$underdispersion_model %in% c("generalized_poisson", "com_poisson"))
+    stop("--underdispersion-model must be generalized_poisson or com_poisson.")
   opts
 }
 
 options <- parse_args(args)
 if (is.null(options)) quit(status = 0L)
 
-build_scenarios <- function(n_var, include_imbalance = TRUE) {
-  # s denotes the balanced size; each split preserves the total of 2*s.
-  sizes <- do.call(rbind, lapply(c(3L, 5L, 10L, 30L, 50L), function(s) {
-    fractions <- if (include_imbalance) c(0.5, 0.25, 0.125) else 0.5
-    n1 <- as.integer(floor(2 * s * fractions + 0.5))
-    result <- data.frame(s = s, n_group1 = n1, n_group2 = 2L * s - n1,
-                         minority_fraction_target = fractions)
-    result <- result[result$n_group1 >= 3L & result$n_group2 >= 3L, , drop = FALSE]
-    result[!duplicated(result[c("n_group1", "n_group2")]), , drop = FALSE]
-  }))
-  make_family <- function(model) {
-    grid <- expand.grid(
-      size_index = seq_len(nrow(sizes)),
-      fold_change_min = c(1, 2, 4),
-      upregulated_fraction = c(0.25, 0.50, 0.75),
-      library_size_sdlog = c(0, 0.25, 0.50),
-      outlier_fraction = c(0, 0.001, 0.01),
-      sparsity = c(0, 0.10, 0.30),
-      batch_effect = c(1, 1.5),
-      dispersion_scale = if (model == "negative_binomial") c(0.5, 1, 2) else 1,
-      KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE
-    )
-    grid <- cbind(grid, sizes[grid$size_index, , drop = FALSE])
-    grid$size_index <- NULL
-    grid$n_samples <- grid$n_group1 + grid$n_group2
-    grid$count_model <- model
-    grid$design <- "full_factorial"
-    grid$sample_size_baseline <- grid$s
-    grid$s[grid$n_group1 != grid$n_group2] <- NA_integer_
-    grid$varied_factor <- "full_factorial"
-    grid$batch_fraction <- 0.5
-    grid$de_fraction <- 0.3 # Replaced by DE selection before simulation.
-    grid$n_diffexp <- as.integer(round(n_var * grid$de_fraction))
-    # A setting fixes all non-sample factors; mode 2 shares DE across sizes.
-    grid$de_setting_id <- do.call(paste, c(grid[c(
-      "fold_change_min", "upregulated_fraction", "library_size_sdlog",
-      "outlier_fraction", "sparsity", "batch_effect", "dispersion_scale"
-    )], sep = "_"))
-    grid$scenario_id <- paste0(model, "_factorial_g", grid$n_group1, "-", grid$n_group2,
-      "_fc", grid$fold_change_min, "_up", grid$upregulated_fraction,
-      "_lib", grid$library_size_sdlog, "_out", grid$outlier_fraction,
-      "_zero", grid$sparsity, "_batch", grid$batch_effect, "_disp", grid$dispersion_scale)
-    grid
-  }
-  scenarios <- rbind(make_family("negative_binomial"), make_family("poisson"))
-  rownames(scenarios) <- NULL
-  scenarios$scenario_index <- seq_len(nrow(scenarios))
-  scenarios$simulation_version <- simulation_version
-  scenarios$n_var <- n_var
-  scenarios
-}
+source("scripts/custom_simulation/factorial_design.R")
 
 resolve_path <- function(path) {
   is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)
@@ -230,7 +185,7 @@ output_root <- resolve_path(options$output)
 shard_label <- sprintf("shard-%03d-of-%03d", options$shard_index, options$shard_count)
 shard_dir <- file.path(output_root, shard_label)
 
-scenarios <- build_scenarios(options$n_var, options$include_imbalance)
+scenarios <- build_scenarios(options$n_var, options$include_imbalance, options$underdispersion_model)
 source("scripts/custom_simulation/batch_jobs.R")
 cat("Base combinations:", nrow(scenarios), "; DE mode:", options$de_mode, "\n")
 flush.console()
@@ -255,6 +210,10 @@ source("renv/activate.R")
 if (options$restore) renv::restore(prompt = FALSE)
 if (!requireNamespace("edgeR", quietly = TRUE)) {
   stop("edgeR is unavailable. Restore the renv environment or install the locked packages.")
+}
+if (options$underdispersion_model == "com_poisson" &&
+    !requireNamespace("COMPoissonReg", quietly = TRUE)) {
+  stop("Underdispersion requires COMPoissonReg. Install it with renv::install('COMPoissonReg').")
 }
 source("scripts/shared/simulate_custom.R")
 
@@ -337,6 +296,7 @@ run_job <- function(job, completed) {
       n_var = options$n_var,
       n_diffexp = job$n_diffexp,
       count_model = job$count_model,
+      variance_mean_ratio = job$variance_mean_ratio,
       dispersion_estimator = options$dispersion_estimator,
       dispersion_scale = if (job$count_model == "negative_binomial") job$dispersion_scale else 1,
       library_size_sdlog = job$library_size_sdlog,

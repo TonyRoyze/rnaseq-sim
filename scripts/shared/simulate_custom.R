@@ -6,6 +6,7 @@ for (module in c(
   "helpers.R",
   "estimate_parameters.R",
   "prepare_design.R",
+  "generalized_poisson.R",
   "generate_counts.R",
   "simulate_counts.R"
 )) {

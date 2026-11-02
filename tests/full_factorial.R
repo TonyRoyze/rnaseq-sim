@@ -1,16 +1,17 @@
 # Run from the project root: Rscript --vanilla tests/full_factorial.R
-simulation_version <- '3.0'
+simulation_version <- '4.0'
 for (e in parse('scripts/custom_simulation/run_batch.R')) {
   if (is.call(e) && identical(e[[1]], as.name('<-')) &&
-      as.character(e[[2]])[1] %in% c('parse_args', 'build_scenarios')) eval(e)
+      as.character(e[[2]])[1] %in% c('parse_args')) eval(e)
 }
+source('scripts/custom_simulation/factorial_design.R')
 source('scripts/custom_simulation/de_proportion_modes.R')
 opts <- parse_args(character())
 stopifnot(opts$de_mode == 'fixed', opts$include_imbalance)
 stopifnot(!parse_args('--no-imbalance')$include_imbalance)
 sc <- build_scenarios(10000)
 balanced <- build_scenarios(10000, FALSE)
-stopifnot(nrow(sc) == 23328, nrow(balanced) == 9720,
+stopifnot(nrow(sc) == 40824, nrow(balanced) == 17010,
           !anyDuplicated(sc$scenario_id), all(sc$n_samples == 2 * sc$sample_size_baseline),
           all(sc$n_group1 >= 3), all(sc$n_group2 >= 3))
 splits <- unique(sc[c('sample_size_baseline','n_group1','n_group2')])
@@ -26,7 +27,7 @@ for (model in c('poisson', 'negative_binomial')) {
 }
 sc$replicate <- 1L
 x <- assign_de_proportions(sc, 'fixed', opts$de_proportions, 42, 10000)
-stopifnot(nrow(x) == 163296, !anyDuplicated(x$scenario_id),
+stopifnot(nrow(x) == 285768, !anyDuplicated(x$scenario_id),
           all(table(x$de_fraction) == nrow(sc)),
           all(x$n_diffexp == round(10000 * x$de_fraction)))
 stopifnot(sum(x$count_model == 'poisson') == 40824,

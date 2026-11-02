@@ -6,14 +6,28 @@ this repository. The project lockfile pins **R 4.3.3** and **Bioconductor
 
 ## 1. Install prerequisites
 
-Install these before cloning the repository:
+Install these before cloning the repository. In an Administrator PowerShell,
+install Git, Git LFS, and Posit's R Installation Manager (`rig`) with WinGet:
 
-1. **R 4.3.3 for Windows (64-bit)** from CRAN.
-2. **Git for Windows**.
-3. **Git LFS for Windows**. The reference count data are stored with Git LFS.
-4. **Rtools43**, matching R 4.3. Some locked packages may need to be compiled
-   from source during restore. The setup script checks for its `sh.exe`
-   prerequisite before starting `renv::restore()`.
+```powershell
+winget install --id Git.Git -e --source winget
+winget install --id GitHub.GitLFS -e --source winget
+winget install --id Posit.rig -e --source winget
+```
+
+Close and reopen PowerShell after installation so the updated `PATH` is loaded.
+Confirm `rig --version` identifies Posit's R Installation Manager; another
+program named `rig` may be on `PATH` and is not compatible with this guide.
+
+Install the remaining version-specific prerequisites:
+
+1. **R 4.3.3 for Windows (64-bit)**. The setup script can install it with
+   Posit rig if it is not already present.
+2. **Rtools43**, matching R 4.3. Download and install it from the
+   [official Rtools43 page](https://cran.r-project.org/bin/windows/Rtools/rtools43/rtools.html).
+   Some locked packages may need to be compiled from source during restore.
+   The setup script checks for its `sh.exe` prerequisite before starting
+   `renv::restore()`.
 
 If the lab has restricted internet access, allow R and Git to reach CRAN,
 Bioconductor, Posit Package Manager, and GitHub during setup. Package restore
@@ -130,3 +144,22 @@ for the full benchmark settings.
   consumer sync tools while multiple workers are writing.
 - For all runner options, setting definitions, and method analysis, see
   [`scripts/custom_simulation/README.md`](scripts/custom_simulation/README.md).
+
+## Underdispersion generators
+
+Generalized Poisson is the default (`--underdispersion-model generalized_poisson`).
+Its normalized finite-support sampler uses the base R `stats` package, requiring
+no extra package installation. The optional COM-Poisson generator is selected
+with `--underdispersion-model com_poisson`. `COMPoissonReg` 0.8.2 and its
+Rcpp/numDeriv dependencies are in `renv.lock`; `setup_windows.ps1` restores and
+checks the package. Manual setup on any platform:
+
+```r
+source("renv/activate.R")
+renv::restore(prompt = FALSE)
+stopifnot(requireNamespace("COMPoissonReg", quietly = TRUE))
+```
+
+Pass the same `--underdispersion-model` flag to all workers and to
+`check_batch.R` when checking completion. The model name is saved in dataset
+IDs, so results from the two underdispersion generators are distinguishable.

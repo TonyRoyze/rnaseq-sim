@@ -242,7 +242,7 @@ Invoke-ProjectR -RCommandArgs @("-e", $restoreExpression)
 
 $packageCheckScript = Join-Path $env:TEMP "rnaseq-sim-package-check-$([guid]::NewGuid().ToString('N')).R"
 @'
-required <- c("edgeR", "limma", "DESeq2", "DESeq", "DSS", "NBPSeq", "NOISeq", "ABSSeq", "ROTS")
+required <- c("edgeR", "limma", "DESeq2", "DESeq", "DSS", "NBPSeq", "NOISeq", "ABSSeq", "ROTS", "COMPoissonReg")
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing)) stop("Missing required packages: ", paste(missing, collapse = ", "))
 cat("PACKAGE_CHECK=OK\n")

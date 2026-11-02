@@ -25,3 +25,4 @@ TCGAbiolinks 2.30.4
 tidyverse 2.0.0
 zoo 1.8.12
 ExpressionAtlas 1.30.0
+COMPoissonReg 0.8.2

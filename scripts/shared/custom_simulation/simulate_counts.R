@@ -5,7 +5,7 @@ simulate_custom_counts <- function(
     s = 10,
     n_var = 10000,
     n_diffexp = 3000,
-    count_model = c("negative_binomial", "poisson"),
+    count_model = c("negative_binomial", "poisson", "com_poisson", "generalized_poisson"),
     dispersion_scale = 1,
     dispersion_source = c("total", "group"),
     dispersion_estimator = c("method_of_moments", "edgeR"),
@@ -21,7 +21,7 @@ simulate_custom_counts <- function(
     batch_fraction = 0.5,
     batch_effect = 1,
     seed = NULL,
-    group_sizes = NULL) {
+    group_sizes = NULL, variance_mean_ratio = 0.5) {
 
   if (!requireNamespace("edgeR", quietly = TRUE)) {
     stop("Package 'edgeR' is required to construct the simulated DGEList.")
@@ -49,6 +49,11 @@ simulate_custom_counts <- function(
     batch = batch, batch_fraction = batch_fraction, batch_effect = batch_effect,
     group_sizes = group_sizes
   )
+  if (count_model %in% c("com_poisson", "generalized_poisson")) {
+    validate_simulation_scalar(variance_mean_ratio, "variance_mean_ratio", 0, 1, FALSE)
+    if (variance_mean_ratio >= 1) stop("Underdispersion requires k < 1.")
+  }
+  design$variance_mean_ratio <- variance_mean_ratio
   counts <- generate_simulated_count_matrix(
     design, count_model, outlier_fraction, outlier_multiplier, sparsity
   )
@@ -90,7 +95,8 @@ simulate_custom_counts <- function(
     parameters = list(
       s = design$s, group_sizes = design$group_sizes, n_samples = design$n_samples,
       n_var = design$n_var, n_diffexp = design$n_diffexp,
-      count_model = count_model, dispersion = design$dispersion,
+      count_model = count_model, variance_mean_ratio = if (count_model %in% c("com_poisson", "generalized_poisson")) variance_mean_ratio else if (count_model == "poisson") 1 else NA_real_,
+      dispersion = design$dispersion,
       dispersion_scale = dispersion_scale, dispersion_source = dispersion_source,
       dispersion_estimator = dispersion_estimator,
       dispersion_estimates = dispersion_estimates,

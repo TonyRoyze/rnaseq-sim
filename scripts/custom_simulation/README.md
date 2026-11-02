@@ -13,7 +13,7 @@ Rscript scripts/custom_simulation/run_batch.R
 ```
 
 The default reference mode uses `data/DGElist_BRCA.rds`, and outputs go to
-`results/custom_simulation_v3.0/`. The runner supports three reference modes:
+`results/custom_simulation_v4.0/`. The runner supports three reference modes:
 
 - `--reference-mode brca` (default): use only `--reference` (defaults to
   `data/DGElist_BRCA.rds`).
@@ -222,7 +222,7 @@ can be inspected and retried.
 Each shard writes into its own directory, for example:
 
 ```text
-results/custom_simulation_v3.0/
+results/custom_simulation_v4.0/
 ├── parameters-<reference-md5>.rds
 ├── shard-001-of-004/
 │   ├── status.csv
@@ -299,12 +299,79 @@ Rscript scripts/custom_simulation/run_batch.R --de-mode 3 --replicates 3
 
 ## Simulation version
 
-The current simulation version is **3.0**. The default generation output and
-analysis input are `results/custom_simulation_v3.0`. Use `--output PATH` on the
+The current simulation version is **4.0**. The default generation output and
+analysis input are `results/custom_simulation_v4.0`. Use `--output PATH` on the
 generator or `--input PATH` on the analysis runner to override these paths.
 Each generated dataset RDS and each manifest row record `simulation_version`.
 Existing datasets are not moved or relabeled.
 
 ```sh
 Rscript scripts/custom_simulation/run_batch.R --version
+```
+
+## Verify simulation output
+
+Run the checker with the **same experiment options** used by the generator. It
+recreates expected jobs one bounded batch at a time, checks every expected RDS
+path across the shard folders, and exits nonzero if datasets are missing. The
+check does not require `edgeR` or restore the R environment.
+
+```sh
+Rscript scripts/custom_simulation/check_batch.R \\
+  --replicates 100 --shard-count 4
+```
+
+Add `--deep` to read every RDS and validate simulation version, scenario ID,
+seed, count dimensions and values, group sizes, and the number of DE genes.
+Deep checking reads and decompresses all files, so it can take a while. Missing paths and deep validation failures are written to timestamped
+`verification-missing-*.txt` and `verification-invalid-*.txt` reports. If checking an experiment that overrode any design
+flags (such as `--reference-mode`, `--n-var`, `--de-mode`, or
+`--no-imbalance`), pass the same values to the checker.
+
+## Underdispersion extension
+
+The default factorial includes Generalized Poisson at target variance/mean
+ratios 0.2, 0.5, and 0.81, alongside Poisson at 1 and the three NB scales.
+Select `--underdispersion-model generalized_poisson` (default) or
+`--underdispersion-model com_poisson`. This selects one generator, not both;
+the total number of combinations is the same for either choice. The model is
+encoded in IDs and saved as `count_model` in datasets and status records.
+The Generalized-Poisson implementation uses base R only. The optional
+COM-Poisson dependency COMPoissonReg 0.8.2 is locked in renv.lock and restored
+and checked by the Windows setup script. Manual setup uses `renv::restore()`.
+Both choices are available in package-free `--plan-only` mode.
+There are 285,768 combinations per replicate with imbalance, or 28,576,800
+with 100 replicates and one reference. Earlier totals above describe the
+Poisson/NB subset only. Underdispersion adds 122,472 combinations per replicate.
+
+COM-Poisson parameters are calibrated numerically for each conditional expected
+count to match E(Y)=mu and Var(Y)=k*mu; parameters are not interchangeable with
+NB dispersion scales. This is substantially slower than Poisson/NB generation.
+The target applies before optional outliers and zero insertion, and conditional
+on group, library size, and batch. Those modifications can increase the
+observed variance/mean ratio. For a clean dispersion comparison, use zero
+outlier fraction, zero sparsity, and fixed library/batch multipliers.
+For integer-valued counts with noninteger mean mu, variance cannot be less
+than frac(mu)*(1-frac(mu)). Infeasible targets and failed numerical calibrations
+fail explicitly and are recorded in the status log.
+
+### Generalized-Poisson equations and numerical checks
+
+The sampler normalizes finite-support weights
+`w(y) = theta * (theta + b*y)^(y-1) * exp(-theta-b*y) / y!`,
+for integers `y >= 0` satisfying `theta+b*y > 0`, with `theta > 0`, `b < 0`.
+It samples with `p(y) = w(y) / sum(w)`. Nominal starting parameters are
+`b = 1 - 1/sqrt(k)` and `theta = mu/sqrt(k)`. Finite-support normalization can
+change the nominal mean and variance at low means, so the code computes actual
+moments and calibrates theta and b when necessary. Actual mean and variance
+must each be within 0.1% of mu and k*mu, respectively. Infeasible targets or
+failed calibration raise errors. Support above one million points is rejected
+explicitly to bound numerical work. A zero mean produces zero counts.
+
+```sh
+Rscript scripts/custom_simulation/run_batch.R --replicates 100 \
+  --shard-count 4 --shard-index 1 --underdispersion-model generalized_poisson
+
+Rscript scripts/custom_simulation/run_batch.R --plan-only \
+  --underdispersion-model com_poisson
 ```
