@@ -28,6 +28,7 @@ parse_args <- function(args) {
     replicates = 1L,
     batch_size = 1000L,
     setting_batch = 0L,
+    shard_unit = "setting",
     settings_per_batch = 100L,
     job_index = 0L,
     de_mode = "fixed",
@@ -56,6 +57,7 @@ parse_args <- function(args) {
       "  --version             Print simulation version and exit",
       "  --shard-index N       This shard, starting at 1 (default: 1)",
       "  --shard-count N       Total shards/workers (default: 1)",
+      "  --shard-unit UNIT    setting (default) keeps replicates together; job uses legacy sharding",
       "  --setting-batch N    Select a batch of settings (1-based; 0 selects all)",
       "  --settings-per-batch N Settings per selected batch (default: 100)",
       "  --job-index N        Regenerate only this original job ID",
@@ -94,7 +96,7 @@ parse_args <- function(args) {
       opts$plan_only <- TRUE
       i <- i + 1L
     } else if (key %in% c("--reference", "--reference-mode", "--references", "--output", "--shard-index", "--shard-count",
-                          "--setting-batch", "--settings-per-batch", "--job-index",
+                          "--shard-unit", "--setting-batch", "--settings-per-batch", "--job-index",
                           "--replicates", "--n-var", "--base-seed", "--dispersion-estimator",
                           "--de-mode", "--de-proportions", "--batch-size", "--underdispersion-model")) {
       if (i == length(args)) stop("Missing value for ", key)
@@ -106,6 +108,7 @@ parse_args <- function(args) {
         "--de-mode" = "de_mode", "--de-proportions" = "de_proportions",
         "--underdispersion-model" = "underdispersion_model",
         "--batch-size" = "batch_size",
+        "--shard-unit" = "shard_unit",
         "--setting-batch" = "setting_batch", "--settings-per-batch" = "settings_per_batch",
         "--job-index" = "job_index",
         "--replicates" = "replicates", "--n-var" = "n_var",
@@ -154,6 +157,7 @@ parse_args <- function(args) {
   if (anyNA(c(opts$setting_batch, opts$settings_per_batch, opts$job_index)) ||
       opts$setting_batch < 0 || opts$settings_per_batch < 1 || opts$job_index < 0)
     stop("Invalid setting batch or job index.")
+  if (!opts$shard_unit %in% c("setting", "job")) stop("--shard-unit must be setting or job.")
   opts
 }
 

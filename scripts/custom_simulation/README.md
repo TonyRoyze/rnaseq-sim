@@ -13,7 +13,7 @@ Rscript scripts/custom_simulation/run_batch.R
 ```
 
 The default reference mode uses `data/DGElist_BRCA.rds`, and outputs go to
-`results/custom_simulation_v5.0/`. The runner supports three reference modes:
+`results/custom_simulation_v5.1/`. The runner supports three reference modes:
 
 - `--reference-mode brca` (default): use only `--reference` (defaults to
   `data/DGElist_BRCA.rds`).
@@ -222,7 +222,7 @@ can be inspected and retried.
 Each shard writes into its own directory, for example:
 
 ```text
-results/custom_simulation_v5.0/
+results/custom_simulation_v5.1/
 ├── parameters-<reference-md5>.rds
 ├── shard-001-of-004/
 │   ├── status.csv
@@ -299,8 +299,8 @@ Rscript scripts/custom_simulation/run_batch.R --de-mode 3 --replicates 3
 
 ## Simulation version
 
-The current simulation version is **5.0**. The default generation output and
-analysis input are `results/custom_simulation_v5.0`. Use `--output PATH` on the
+The current simulation version is **5.1**. The default generation output and
+analysis input are `results/custom_simulation_v5.1`. Use `--output PATH` on the
 generator or `--input PATH` on the analysis runner to override these paths.
 Each generated dataset RDS and each manifest row record `simulation_version`.
 Existing datasets are not moved or relabeled.
@@ -383,7 +383,7 @@ The pipeline generates all replicates for 100 settings, runs the core method
 analysis, retains per-replicate metrics and reproducibility metadata, and
 removes simulated datasets after successful analysis. Gene-level analysis
 results are removed to bound storage. Results live under
-`results/custom_simulation_pipeline_v5.0/batch-*/analysis/`. Completed batches are
+`results/custom_simulation_pipeline_v5.1/batch-*/analysis/`. Completed batches are
 skipped on restart with the same arguments. Failed batches keep their datasets.
 Stop existing generation workers before switching to this pipeline.
 
@@ -406,4 +406,11 @@ Rscript scripts/custom_simulation/run_pipeline.R \
 
 Use shard indices 1 through 5 on separate workers. Each pipeline worker owns
 its own configuration, completion markers and analysis directory under
-`results/custom_simulation_pipeline_v5.0/shard-001-of-005/` (and equivalent shards).
+`results/custom_simulation_pipeline_v5.1/shard-001-of-005/` (and equivalent shards).
+
+Settings now belong entirely to one worker (`--shard-unit setting`, the
+default): replicas 1 through 100 run consecutively on that worker. The legacy
+replicate-level assignment remains available as `--shard-unit job`. Stop all
+old workers before changing assignment. Do not reuse completed pipeline batch
+markers from the old assignment; start with a fresh pipeline directory.
+The progress denominator refers to the selected batch, not the full experiment.

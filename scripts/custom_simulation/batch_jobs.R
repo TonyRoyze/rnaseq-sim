@@ -27,6 +27,30 @@ make_job_iterator <- function(scenarios, opts, references) {
   n_assigned <- if (opts$shard_index > n_total) 0 else
     floor((n_total - opts$shard_index) / opts$shard_count) + 1
   cursor <- 0
+  # Assign complete settings, then expand their replicates lazily. Selection
+  # happens here so each pipeline batch does not scan the full experiment.
+  setting_order <- NULL
+  if (identical(opts$shard_unit, 'setting') || isTRUE(opts$setting_batch > 0L) ||
+      isTRUE(opts$job_index > 0L)) {
+    setting_order <- unlist(lapply(base_groups, function(base) {
+      unlist(lapply(seq_len(n_de) - 1L, function(de) de * n_base + base), use.names=FALSE)
+    }), use.names=FALSE)
+    ordinal <- seq_along(setting_order)
+    if (isTRUE(opts$setting_batch > 0L)) {
+      keep <- ceiling(setting_order / opts$settings_per_batch) == opts$setting_batch
+      setting_order <- setting_order[keep]
+      ordinal <- ordinal[keep]
+    }
+    if (identical(opts$shard_unit, 'setting') && !isTRUE(opts$job_index > 0L))
+      setting_order <- setting_order[(ordinal - 1) %% opts$shard_count + 1 == opts$shard_index]
+    n_assigned <- length(setting_order) * as.double(n_rep) * n_ref
+    if (isTRUE(opts$job_index > 0L)) {
+      if (opts$job_index > n_total) stop('Requested job index exceeds the experiment size.')
+      wanted <- floor((opts$job_index - 1) / (as.double(n_rep) * n_ref)) + 1
+      setting_order <- setting_order[setting_order == wanted]
+      n_assigned <- as.double(length(setting_order) > 0)
+    }
+  }
 
   # Store one RNG checkpoint per base scenario/setting, never per replicate.
   # This preserves the previous random DE draws without a full expanded table.
@@ -71,6 +95,7 @@ make_job_iterator <- function(scenarios, opts, references) {
   next_batch <- function(limit = opts$batch_size) {
     count <- min(limit, opts$batch_size, n_assigned - cursor)
     if (count <= 0) return(NULL)
+    if (is.null(setting_order)) {
     ranks <- (opts$shard_index - 1) + (cursor + seq_len(count) - 1) * opts$shard_count
     blocks <- findInterval(ranks, starts)
     local <- ranks - starts[blocks]
@@ -87,6 +112,21 @@ make_job_iterator <- function(scenarios, opts, references) {
     reference_index <- as.integer(local %% n_ref + 1)
     setting_job_index <- de_index * n_base * n_rep + (as.double(base) - 1) * n_rep + replicate
     job_index <- (setting_job_index - 1) * n_ref + reference_index
+    }
+    if (!is.null(setting_order)) {
+      offset <- cursor + seq_len(count) - 1
+      setting <- setting_order[floor(offset / (as.double(n_rep) * n_ref)) + 1]
+      de_index <- floor((setting - 1) / n_base)
+      base <- as.integer((setting - 1) %% n_base + 1)
+      replicate <- as.integer(floor((offset %% (as.double(n_rep) * n_ref)) / n_ref) + 1)
+      reference_index <- as.integer(offset %% n_ref + 1)
+      if (isTRUE(opts$job_index > 0L)) {
+        reference_index <- as.integer((opts$job_index - 1) %% n_ref + 1)
+        replicate <- as.integer(floor((opts$job_index - 1) / n_ref) %% n_rep + 1)
+      }
+      setting_job_index <- de_index * n_base * n_rep + (as.double(base) - 1) * n_rep + replicate
+      job_index <- (setting_job_index - 1) * n_ref + reference_index
+    }
     job <- scenarios[base, , drop = FALSE]
     job$replicate <- replicate
     job$de_fraction <- if (opts$de_mode == 'fixed') opts$de_proportions[de_index + 1] else
@@ -111,7 +151,7 @@ make_job_iterator <- function(scenarios, opts, references) {
     job$shard <- opts$shard_index
     job$seed <- as.integer((as.double(opts$base_seed) + job_index * 1009 + replicate) %% .Machine$integer.max)
     job$dispersion_estimator <- opts$dispersion_estimator
-    job$planner <- 'bounded_v1'
+    job$planner <- if (identical(opts$shard_unit, 'setting')) 'settings_v2' else 'bounded_v1'
     rownames(job) <- NULL
     cursor <<- cursor + count
     job
