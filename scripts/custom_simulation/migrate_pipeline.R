@@ -67,7 +67,10 @@ for (k in seq_along(files)) {
       stop('Scenario mismatch (',column,'): ', files[k])
   }
   if (opts$de_mode == 'fixed' && job$de_fraction != opts$de_proportions[de]) stop('DE proportion mismatch: ', files[k])
-  index <- (job$setting_job_index-1)*nref + job$reference_index
+  # Random mode records the chosen reference (1..N), but has only one
+  # logical reference slot per job. Only all mode expands reference slots.
+  slot <- if (opts$reference_mode == 'all') job$reference_index else 1L
+  index <- (job$setting_job_index-1)*nref + slot
   if (index != job$job_index || job$seed != as.integer((as.double(opts$base_seed)+index*1009+job$replicate) %% .Machine$integer.max)) stop('Seed/job index mismatch: ', files[k])
   ref <- if (opts$reference_mode == 'all') job$reference_index else 1L
   if (opts$reference_mode == 'random') {
