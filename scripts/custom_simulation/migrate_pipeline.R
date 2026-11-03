@@ -5,6 +5,7 @@ p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 project_root <- normalizePath(file.path(dirname(p), '../..'))
 setwd(project_root)
 source('scripts/custom_simulation/version.R')
+source('scripts/custom_simulation/check_paths.R')
 source('scripts/custom_simulation/factorial_design.R')
 source('scripts/custom_simulation/batch_jobs.R')
 argv <- commandArgs(TRUE)
@@ -91,13 +92,15 @@ if (anyDuplicated(plan$destination)) stop('Duplicate datasets map to the same ta
 cat('Validated', nrow(plan), 'datasets. Planned batches/workers:\n')
 print(with(plan, table(worker,batch)))
 if (!apply) {cat('Preview only. Repeat with --apply to move files. Stop ALL simulation/pipeline workers first.\n'); quit(status=0L)}
-dir.create(destination,recursive=TRUE,showWarnings=FALSE)
+check_pipeline_paths(destination)
+if (!dir.exists(destination) && !dir.create(destination,recursive=TRUE)) stop('Cannot create destination: ', destination)
 log <- file.path(destination,paste0('migration-',format(Sys.time(),'%Y%m%d-%H%M%S'),'.csv'))
 write.csv(plan,log,row.names=FALSE)
 for (k in seq_len(nrow(plan))) {
   src <- plan$source[k]; dst <- plan$destination[k]
   if (normalizePath(dst,mustWork=FALSE)==src) next
-  dir.create(dirname(dst),recursive=TRUE,showWarnings=FALSE)
+  if (!dir.exists(dirname(dst)) && !dir.create(dirname(dst),recursive=TRUE))
+    stop('Cannot create destination directory: ', dirname(dst), '. Source file preserved: ', src)
   if (!file.rename(src,dst)) stop('Move failed: ',src,'. No copy/delete fallback used. Consult ',log)
 }
 cat('Migration complete. Move log:',log,'\nRestart run_pipeline.R with the SAME experiment flags and each worker index.\n')

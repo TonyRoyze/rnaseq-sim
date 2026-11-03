@@ -4,6 +4,7 @@ a <- commandArgs(FALSE)
 p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 setwd(normalizePath(file.path(dirname(p), '../..')))
 source('scripts/custom_simulation/version.R')
+source('scripts/custom_simulation/check_paths.R')
 args <- commandArgs(TRUE)
 if ('--version' %in% args) {
   cat('Custom simulation pipeline version', simulation_version, '\n')
@@ -25,6 +26,7 @@ if (anyNA(c(shard_index, shard_count)) || shard_index < 1L || shard_index > shar
   stop('Invalid shard settings.')
 root <- file.path(paste0('results/custom_simulation_pipeline_v', simulation_version),
                   sprintf('shard-%03d-of-%03d', shard_index, shard_count))
+check_pipeline_paths(root)
 dir.create(root, recursive=TRUE, showWarnings=FALSE)
 rscript <- file.path(R.home('bin'), 'Rscript')
 run <- function(script, args) {
