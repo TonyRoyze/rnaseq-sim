@@ -414,3 +414,28 @@ replicate-level assignment remains available as `--shard-unit job`. Stop all
 old workers before changing assignment. Do not reuse completed pipeline batch
 markers from the old assignment; start with a fresh pipeline directory.
 The progress denominator refers to the selected batch, not the full experiment.
+
+## Import datasets from the old flat shard folders
+
+Stop all generation and pipeline workers first. Preview the migration using
+exactly the experiment flags used to generate the datasets:
+
+```sh
+Rscript scripts/custom_simulation/migrate_pipeline.R \
+  --source results/custom_simulation_pipeline_v5.1 -- \
+  --replicates 100 --reference-mode random --shard-count 5 --shard-index 3 \
+  --dispersion-estimator edgeR --no-restore
+```
+
+Repeat with `--apply` before `--` to perform the moves. The source may be the
+whole old results root (recommended, covering every old worker) or a single
+shard directory. The default destination is the versioned pipeline root.
+Existing completed batches and conflicting files are protected. The script
+reads and validates every dataset before moving any, records a CSV move plan,
+and preserves original datasets and metadata without recompressing them.
+Files are reassigned by setting to the correct worker and batch, regardless
+of their old worker. No completion markers are created: the pipeline checks
+existing dataset filenames, generates missing jobs, then analyzes the batch.
+Restart the pipeline with the same experiment flags, separately for each
+worker. Migration does not run analysis itself. Old status logs remain in
+place; fresh batch status logs are written when the pipeline resumes.
