@@ -8,6 +8,8 @@ if (!length(script_arg)) stop("Run this script with Rscript.")
 script_path <- normalizePath(sub("^--file=", "", script_arg[1]), mustWork = TRUE)
 project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork = TRUE)
 setwd(project_root)
+source("scripts/custom_simulation/pipeline_logging.R")
+start_pipeline_log()
 
 source("scripts/custom_simulation/version.R")
 
@@ -188,6 +190,7 @@ write_manifest <- function() {
   if (!file.rename(path_tmp, manifest_path)) stop("Could not update manifest: ", manifest_path)
 }
 
+analysis_counts <- c(complete=0L, failed=0L, skipped=0L)
 last_dataset <- NULL
 dataset <- NULL
 for (i in seq_len(nrow(jobs))) {
@@ -200,6 +203,7 @@ for (i in seq_len(nrow(jobs))) {
     record$error <- ""
     rows[[i]] <- record
     write_manifest()
+    analysis_counts["skipped"] <- analysis_counts["skipped"] + 1L
     next
   }
   record$status <- "running"
@@ -249,9 +253,12 @@ for (i in seq_len(nrow(jobs))) {
     cat("ERROR ", job$method, "/", spec$setting_id, ": ",
         conditionMessage(e), "\n", sep = "")
   })
+  analysis_counts[record$status] <- analysis_counts[record$status] + 1L
   rows[[i]] <- record
   write_manifest()
 }
 write_manifest()
+cat(sprintf("ANALYSIS SUMMARY: %d calculated, %d failed, %d existing results skipped.\n",
+            analysis_counts["complete"], analysis_counts["failed"], analysis_counts["skipped"]))
 cat("Finished analysis shard ", options$shard_index, " of ",
     options$shard_count, ". Manifest: ", manifest_path, "\n", sep = "")

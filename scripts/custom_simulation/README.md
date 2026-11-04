@@ -439,3 +439,40 @@ existing dataset filenames, generates missing jobs, then analyzes the batch.
 Restart the pipeline with the same experiment flags, separately for each
 worker. Migration does not run analysis itself. Old status logs remain in
 place; fresh batch status logs are written when the pipeline resumes.
+
+## Copy results to a portable disk
+
+In PowerShell, replace `E:` with your portable disk drive letter:
+
+```powershell
+Rscript scripts/custom_simulation/export_results.R --destination "E:/RNA-results"
+```
+
+The source defaults to `results/custom_simulation_pipeline_v5.1`. Override with
+`--source "C:/path/to/results/custom_simulation_pipeline_v5.1"` if needed.
+The export includes saved analysis result RDS files, analysis manifests,
+pipeline run logs, worker options and completed-batch markers. It excludes simulated datasets,
+parameter caches and simulation logs. It also includes saved results from
+unfinished batches; use complete.rds and manifest statuses to assess completion.
+For a stable snapshot, stop workers first. A file that changes while copying
+causes an error; rerun to retry. Copies are checksum-verified and unchanged
+files are skipped when rerunning. Source files are never removed or modified.
+Analysis RDS filenames are shortened to content checksums for Windows path
+compatibility; export_index.csv maps original paths to exported paths.
+Embedded original input paths are historical metadata and need not exist on
+the analysis computer. Each RDS still contains its dataset/method/settings IDs
+and metrics. The export does not aggregate replicates. Rerunning adds or
+updates results; it does not delete older exports from the portable disk.
+
+## Pipeline console status and run logs
+
+Each pipeline invocation creates a log under its worker directory:
+`logs/pipeline-YYYY-MM-DD_HH-MM-SS-PID.log`. The start date/time identifies the
+invocation; restarts create a new file. Stage messages show GENERATE, ANALYZE,
+COMPACT, CLEANUP and BATCH COMPLETE, with blank lines and a banner between
+batches. Generation and analysis output is also saved to the run log.
+Completed dataset/result skips are summarized as counts rather than printed
+per filename; completed pipeline batches are summarized on resume. Detailed
+per-job states remain in status.csv and the analysis manifest.csv. Standalone
+generation/analysis commands keep their usual console output; automatic run
+logs are created by run_pipeline.R.

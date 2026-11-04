@@ -5,6 +5,7 @@ p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 setwd(normalizePath(file.path(dirname(p), '../..')))
 source('scripts/custom_simulation/version.R')
 source('scripts/custom_simulation/check_paths.R')
+source('scripts/custom_simulation/pipeline_logging.R')
 args <- commandArgs(TRUE)
 if ('--version' %in% args) {
   cat('Custom simulation pipeline version', simulation_version, '\n')
@@ -28,8 +29,16 @@ root <- file.path(paste0('results/custom_simulation_pipeline_v', simulation_vers
                   sprintf('shard-%03d-of-%03d', shard_index, shard_count))
 check_pipeline_paths(root)
 dir.create(root, recursive=TRUE, showWarnings=FALSE)
+log_dir <- file.path(root, 'logs')
+dir.create(log_dir, recursive=TRUE, showWarnings=FALSE)
+log_path <- normalizePath(file.path(log_dir, paste0('pipeline-', format(Sys.time(), '%Y-%m-%d_%H-%M-%S'), '-', Sys.getpid(), '.log')), winslash='/', mustWork=FALSE)
+Sys.setenv(RNA_PIPELINE_LOG=log_path)
+start_pipeline_log(log_path)
+pipeline_status('START', paste('Version', simulation_version, '| worker', shard_index, 'of', shard_count))
+pipeline_status('LOG', log_path)
 rscript <- file.path(R.home('bin'), 'Rscript')
 run <- function(script, args) {
+  pipeline_status('PROCESS', basename(script))
   code <- system2(rscript, c(shQuote(script), shQuote(args)))
   if (code != 0L) stop('Stopped: ', script, '. Restart with the same options to resume.')
 }
@@ -38,12 +47,21 @@ config <- file.path(root, 'options.rds')
 if (file.exists(config) && !identical(readRDS(config), args)) stop('Pipeline options differ from the existing run.')
 if (!file.exists(config)) saveRDS(args, config)
 index <- 1L
+skipped_batches <- 0L
 repeat {
   batch <- file.path(root, sprintf('batch-%06d', index))
   marker <- file.path(batch, 'complete.rds')
-  if (file.exists(marker)) { index <- index + 1L; next }
+  if (file.exists(marker)) { skipped_batches <- skipped_batches + 1L; index <- index + 1L; next }
+  if (skipped_batches > 0L) {
+    pipeline_status("RESUME", paste(skipped_batches, "completed batches skipped"))
+    skipped_batches <- 0L
+  }
+  cat("\n\n", strrep("=", 72), "\n", sep="")
+  pipeline_status("BATCH", sprintf("%06d | worker %d of %d", index, shard_index, shard_count))
+  cat(strrep("=", 72), "\n\n", sep="")
   input <- file.path(batch, 'datasets')
   output <- file.path(batch, 'analysis')
+  pipeline_status('GENERATE', 'Generate missing datasets; reuse existing datasets')
   run('scripts/custom_simulation/run_batch.R', c(args, '--output', input,
       '--setting-batch', as.character(index), '--settings-per-batch', '100'))
   datasets <- list.files(input, pattern='-rep[0-9]+-n[0-9]+-seed[0-9]+-ref[[:xdigit:]]{8}\\.rds$', recursive=TRUE, full.names=TRUE)
@@ -65,11 +83,13 @@ repeat {
     rows <- rows[!duplicated(rows$output_file, fromLast=TRUE), ]
     if (any(rows$status != 'complete')) stop('Simulation failures in batch ', index, '; keeping datasets for retry.')
   }
+  pipeline_status('ANALYZE', paste(length(datasets), 'datasets; run missing method results'))
   run('scripts/custom_simulation/analyze_batch.R', c('--input', input, '--output', output, '--no-restore'))
   manifests <- list.files(output, pattern='^manifest.csv$', recursive=TRUE, full.names=TRUE)
   if (!length(manifests) || any(vapply(manifests, function(path) any(read.csv(path)$status != 'complete'), logical(1))))
     stop('Analysis incomplete in batch ', index, '; keeping datasets for retry.')
   files <- list.files(file.path(output, 'results'), pattern='\\.rds$', recursive=TRUE, full.names=TRUE)
+  pipeline_status('COMPACT', paste(length(files), 'analysis result files'))
   for (path in files) {
     result <- readRDS(path)
     result$gene_results <- NULL
@@ -78,6 +98,11 @@ repeat {
     if (!file.rename(tmp, path)) stop('Cannot finalize compact result: ', path)
   }
   saveRDS(list(batch=index, settings_per_batch=100L, simulation_options=args), marker)
+  pipeline_status('CLEANUP', paste('Remove', length(datasets), 'analyzed dataset files'))
   unlink(datasets)
+  pipeline_status('BATCH COMPLETE', sprintf('%06d', index))
   index <- index + 1L
 }
+
+if (skipped_batches > 0L) pipeline_status('RESUME', paste(skipped_batches, 'completed batches skipped'))
+pipeline_status('FINISHED', paste('Worker', shard_index, 'finished all assigned batches'))

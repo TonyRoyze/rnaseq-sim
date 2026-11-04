@@ -8,6 +8,8 @@ if (!length(script_arg)) stop("Run this script with Rscript.")
 script_path <- normalizePath(sub("^--file=", "", script_arg[1]), mustWork = TRUE)
 project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork = TRUE)
 setwd(project_root)
+source("scripts/custom_simulation/pipeline_logging.R")
+start_pipeline_log()
 
 source("scripts/custom_simulation/version.R")
 
@@ -296,8 +298,7 @@ run_job <- function(job, completed) {
     record$output_file <- existing[1]
     record$status <- "complete"
     append_status(record, manifest_path)
-    cat("SKIP ", output_name, " (already complete)\n", sep = "")
-    return(invisible(NULL))
+    return(invisible("skipped"))
   }
   append_status(record, manifest_path)
   cat(sprintf("RUN  [%.0f/%.0f] %s (groups=%d/%d, rep=%d, reference=%s)\n",
@@ -344,6 +345,7 @@ run_job <- function(job, completed) {
     cat("ERROR ", job$scenario_id, ": ", conditionMessage(e), "\n", sep = "")
   })
   append_status(record, manifest_path)
+  invisible(record$status)
 }
 
 completed <- 0
@@ -356,13 +358,17 @@ repeat {
   }
   if (options$job_index > 0L) jobs <- jobs[jobs$job_index == options$job_index, , drop = FALSE]
   if (!nrow(jobs)) next
-  cat(sprintf("BATCH %.0f-%.0f of %.0f assigned jobs\n",
+  cat(sprintf("\nGENERATION CHUNK %.0f-%.0f of %.0f assigned datasets\n",
               completed + 1, completed + nrow(jobs), iterator$assigned))
   flush.console()
+  counts <- c(complete=0L, failed=0L, skipped=0L)
   for (i in seq_len(nrow(jobs))) {
-    run_job(jobs[i, , drop = FALSE], completed)
+    outcome <- run_job(jobs[i, , drop = FALSE], completed)
+    counts[outcome] <- counts[outcome] + 1L
     completed <- completed + 1
   }
+  cat(sprintf("GENERATION SUMMARY: %d generated, %d failed, %d existing datasets skipped.\n",
+              counts["complete"], counts["failed"], counts["skipped"]))
   rm(jobs)
 }
 cat("Finished ", shard_label, ". Status log: ", manifest_path, "\n", sep = "")
