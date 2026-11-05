@@ -209,6 +209,16 @@ The core profile covers these options where supported:
 - **ROTS:** TMM versus no composition adjustment, bootstrap count, and top-list
   size.
 
+DSS 2.48.0's abundance-trend fitter fails with `missing values not allowed`
+when expression bins are empty. The DSS adapter omits non-finite bin medians
+before isotonic regression and fits the spline at the retained expression-bin
+coordinates. This repair also applies to DSS's internal simulated trend fits;
+it keeps `trend=TRUE` and does not modify the installed package. Fewer than four
+finite bins remain an explicit failure. Validate with `Rscript tests/dss_trend.R`.
+Rerun the same analysis/pipeline command to retry failed jobs; existing result
+files are skipped. Remove selected existing DSS trend result files first only
+if you want to recompute successful trend fits with this adapter too.
+
 Each saved result includes the method settings, gene-level scores, BH adjusted
 scores, known DE labels, AUC, true-positive rate, observed FDR, and simulation
 and analysis seeds. NOISeq produces `1 - probability` scores rather than

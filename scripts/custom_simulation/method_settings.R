@@ -116,6 +116,46 @@ normalization_factors <- function(counts, method) {
   y
 }
 
+# DSS 2.48.0 passes empty-bin medians to isoreg(), which rejects NA.
+# Clone only the trend call chain into a private environment so DSS's simulated
+# hyperparameter fits use the same repair without changing the package namespace.
+dss_est_dispersion <- function(seq_data, trend = FALSE) {
+  if (!trend) return(DSS::estDispersion(seq_data, trend = FALSE))
+  ns <- asNamespace("DSS")
+  local <- new.env(parent = ns)
+  for (name in c("estDispersion.trend", "shrink.dispersion.trend",
+                 "compute.baseSigma.trend")) {
+    fun <- get(name, envir = ns)
+    environment(fun) <- local
+    local[[name]] <- fun
+  }
+  local$est.trend <- function(X, xmin = 1) {
+    ss <- colSums(X)
+    ss <- ss / min(ss)
+    X <- sweep(X, 2, ss, FUN = "/")
+    phi.hat1 <- est.phi0(X)
+    lexpr <- rowMeans(log(X))
+    phi0a <- median(phi.hat1[lexpr > 2])
+    xmax <- quantile(lexpr, 0.99, na.rm = TRUE)
+    grid <- seq(xmin, xmax, 0.2)
+    trend1 <- tapply(phi.hat1 - phi0a,
+                     cut(lexpr, c(grid, Inf)), median)
+    keep <- is.finite(trend1)
+    if (sum(keep) < 4L) {
+      stop("DSS trend requires at least four finite expression bins.")
+    }
+    trend1 <- -stats::isoreg(-trend1[keep])$yf
+    fit1 <- stats::smooth.spline(x = grid[keep], y = trend1, df = 3)
+    pred1 <- stats::predict(fit1, lexpr)$y
+    pred1[lexpr > xmax] <- stats::predict(fit1, xmax)$y
+    pred1[lexpr < xmin] <- pmax(stats::predict(fit1, xmin)$y,
+                               pred1[lexpr < xmin])
+    log(pred1 + phi0a)
+  }
+  environment(local$est.trend) <- local
+  local$estDispersion.trend(seq_data)
+}
+
 run_method_setting <- function(dge, setting, seed = 1L) {
   counts <- as.matrix(dge$counts)
   groups <- droplevels(factor(dge$samples$group))
@@ -167,7 +207,7 @@ run_method_setting <- function(dge, setting, seed = 1L) {
     )
     seq_data <- DSS::newSeqCountSet(counts, design_data)
     seq_data <- DSS::estNormFactors(seq_data, method = args$norm_method)
-    seq_data <- DSS::estDispersion(seq_data, trend = args$dispersion_trend)
+    seq_data <- dss_est_dispersion(seq_data, trend = args$dispersion_trend)
     result <- DSS::waldTest(seq_data, 1, 0,
                             equal.var = args$equal_var)
     p <- result$pval
