@@ -84,47 +84,40 @@ input_files <- sort(list.files(
 if (!length(input_files)) stop("No generated simulation datasets found under: ", input_root)
 settings <- make_method_settings(options$profile)
 
-dataset_info <- lapply(input_files, function(path) {
-  object <- readRDS(path)
-  if (is.null(object$simulated$dge) || is.null(object$simulated$truth$is_de)) {
-    stop("Not a generated custom-simulation dataset: ", path)
-  }
-  list(
-    path = path,
-    dataset_id = sub("\\.rds$", "", basename(path)),
-    genes = nrow(object$simulated$dge$counts),
-    n_group1 = sum(object$simulated$dge$samples$group == levels(object$simulated$dge$samples$group)[1]),
-    n_group2 = sum(object$simulated$dge$samples$group == levels(object$simulated$dge$samples$group)[2]),
-    n_samples = ncol(object$simulated$dge$counts),
-    samples_per_group = object$simulated$parameters$s
-  )
-})
-
-jobs <- list()
-for (dataset_index in seq_along(dataset_info)) {
-  for (setting_index in seq_along(settings)) {
-    setting <- settings[[setting_index]]
-    weight <- if (setting$method == "ROTS") 10 else if (setting$method == "NOISeq") 4 else
-      if (setting$method %in% c("DESeq2", "DESeq", "ABSSeq", "DSS")) 2 else 1
-    jobs[[length(jobs) + 1L]] <- data.frame(
-      dataset_index = dataset_index,
-      dataset_id = dataset_info[[dataset_index]]$dataset_id,
-      input_file = dataset_info[[dataset_index]]$path,
-      setting_index = setting_index,
-      method = setting$method,
-      setting_id = setting$setting_id,
-      samples_per_group = dataset_info[[dataset_index]]$samples_per_group,
-      n_group1 = dataset_info[[dataset_index]]$n_group1,
-      n_group2 = dataset_info[[dataset_index]]$n_group2,
-      n_samples = dataset_info[[dataset_index]]$n_samples,
-      genes = dataset_info[[dataset_index]]$genes,
-      estimated_work = dataset_info[[dataset_index]]$n_samples *
-        dataset_info[[dataset_index]]$genes * weight,
-      stringsAsFactors = FALSE
-    )
-  }
+dataset_ids <- sub("\\.rds$", "", basename(input_files))
+extract_capture <- function(value, pattern, label, capture = 2L) {
+  match <- regmatches(value, regexec(pattern, value, perl = TRUE))[[1]]
+  if (length(match) < capture) stop("Cannot parse ", label, " from dataset filename: ", value)
+  match[capture]
 }
-jobs <- do.call(rbind, jobs)
+group1 <- as.integer(vapply(dataset_ids, extract_capture, character(1),
+                            pattern = "_g([0-9]+)-([0-9]+)_", label = "group sizes", capture = 2L))
+group2 <- as.integer(vapply(dataset_ids, extract_capture, character(1),
+                            pattern = "_g([0-9]+)-([0-9]+)_", label = "group sizes", capture = 3L))
+n_genes <- as.integer(vapply(dataset_ids, extract_capture, character(1),
+                             pattern = "-n([0-9]+)-seed", label = "gene count"))
+dataset_info_table <- data.frame(
+  dataset_index = seq_along(input_files), dataset_id = dataset_ids,
+  input_file = input_files, genes = n_genes,
+  n_group1 = group1, n_group2 = group2, n_samples = group1 + group2,
+  samples_per_group = ifelse(group1 == group2, group1, NA_integer_),
+  stringsAsFactors = FALSE
+)
+setting_methods <- vapply(settings, `[[`, character(1), "method")
+setting_ids <- vapply(settings, `[[`, character(1), "setting_id")
+setting_weights <- ifelse(setting_methods == "ROTS", 10,
+  ifelse(setting_methods == "NOISeq", 4,
+    ifelse(setting_methods %in% c("DESeq2", "DESeq", "ABSSeq", "DSS"), 2, 1)))
+dataset_indices <- rep(seq_len(nrow(dataset_info_table)), each = length(settings))
+setting_indices <- rep(seq_along(settings), times = nrow(dataset_info_table))
+jobs <- dataset_info_table[dataset_indices, , drop = FALSE]
+jobs$setting_index <- setting_indices
+jobs$method <- setting_methods[setting_indices]
+jobs$setting_id <- setting_ids[setting_indices]
+jobs$estimated_work <- jobs$n_samples * jobs$genes * setting_weights[setting_indices]
+jobs <- jobs[c("dataset_index", "dataset_id", "input_file", "setting_index", "method",
+               "setting_id", "samples_per_group", "n_group1", "n_group2", "n_samples",
+               "genes", "estimated_work")]
 jobs$job_index <- seq_len(nrow(jobs))
 jobs$shard <- NA_integer_
 shard_load <- rep(0, options$shard_count)
@@ -155,107 +148,125 @@ manifest_path <- file.path(shard_dir, "manifest.csv")
 manifest <- if (file.exists(manifest_path)) {
   utils::read.csv(manifest_path, stringsAsFactors = FALSE, check.names = FALSE)
 } else NULL
-rows <- lapply(seq_len(nrow(jobs)), function(i) {
-  job <- jobs[i, , drop = FALSE]
-  spec <- settings[[job$setting_index]]
-  file_name <- paste(job$dataset_id, job$method, spec$setting_id, sep = "--")
-  output_dir <- file.path(output_root, "results", job$dataset_id)
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  record <- job
-  record$setting_args <- paste(names(spec$args), vapply(spec$args, function(x) {
+setting_args <- vapply(settings, function(spec) paste(
+  names(spec$args), vapply(spec$args, function(x) {
     if (is.null(x)) "NULL" else paste(x, collapse = ",")
-  }, character(1)), sep = "=", collapse = ";")
-  record$output_file <- file.path(output_dir, paste0(file_name, ".rds"))
-  record$status <- "pending"
-  record$error <- ""
-  if (!is.null(manifest)) {
-    previous <- manifest[manifest$dataset_id == job$dataset_id &
-      manifest$method == job$method & manifest$setting_id == job$setting_id, , drop = FALSE]
-    if (nrow(previous)) {
-      record$status <- previous$status[1]
-      if ("error" %in% names(previous)) record$error <- previous$error[1]
-    }
+  }, character(1)), sep = "=", collapse = ";"
+), character(1))
+job_keys <- paste(jobs$dataset_id, jobs$method, setting_ids[jobs$setting_index], sep = "\r")
+previous_index <- rep(NA_integer_, nrow(jobs))
+if (!is.null(manifest)) {
+  manifest_keys <- paste(manifest$dataset_id, manifest$method, manifest$setting_id, sep = "\r")
+  previous_index <- match(job_keys, manifest_keys)
+}
+previous_status <- rep("pending", nrow(jobs))
+previous_error <- rep("", nrow(jobs))
+found_previous <- !is.na(previous_index)
+if (any(found_previous)) {
+  previous_status[found_previous] <- manifest$status[previous_index[found_previous]]
+  if ("error" %in% names(manifest)) {
+    previous_error[found_previous] <- manifest$error[previous_index[found_previous]]
   }
-  record
-})
+}
+
+file_names <- paste(jobs$dataset_id, jobs$method, setting_ids[jobs$setting_index], sep = "--")
+jobs$setting_args <- setting_args[jobs$setting_index]
+jobs$output_file <- file.path(output_root, "results", jobs$dataset_id, paste0(file_names, ".rds"))
+jobs$status <- previous_status
+jobs$error <- previous_error
 manifest_extras <- if (!is.null(manifest)) {
-  manifest[!paste(manifest$dataset_id, manifest$method, manifest$setting_id) %in%
-    paste(jobs$dataset_id, jobs$method, jobs$setting_id), , drop = FALSE]
+  manifest[!manifest_keys %in% job_keys, , drop = FALSE]
 } else NULL
 write_manifest <- function() {
-  current <- rows
-  if (!is.null(manifest_extras) && nrow(manifest_extras)) current <- c(current, list(manifest_extras))
+  current <- jobs
+  if (!is.null(manifest_extras) && nrow(manifest_extras)) current <- rbind(current, manifest_extras)
   path_tmp <- paste0(manifest_path, ".tmp")
-  utils::write.csv(do.call(rbind, current), path_tmp, row.names = FALSE, na = "")
+  utils::write.csv(current, path_tmp, row.names = FALSE, na = "")
   if (!file.rename(path_tmp, manifest_path)) stop("Could not update manifest: ", manifest_path)
 }
 
+manifest_checkpoint_every <- 10000L
+completed_since_checkpoint <- 0L
 analysis_counts <- c(complete=0L, failed=0L, skipped=0L)
 last_dataset <- NULL
 dataset <- NULL
+cat(sprintf("Prepared %d analysis jobs; manifest checkpoints every %d jobs.\n",
+            nrow(jobs), manifest_checkpoint_every))
 for (i in seq_len(nrow(jobs))) {
   job <- jobs[i, , drop = FALSE]
-  record <- rows[[i]]
-  output_path <- record$output_file
+  output_path <- jobs$output_file[i]
   spec <- settings[[job$setting_index]]
   if (file.exists(output_path)) {
-    record$status <- "complete"
-    record$error <- ""
-    rows[[i]] <- record
-    write_manifest()
+    jobs$status[i] <- "complete"
+    jobs$error[i] <- ""
     analysis_counts["skipped"] <- analysis_counts["skipped"] + 1L
-    next
-  }
-  record$status <- "running"
-  rows[[i]] <- record
-  write_manifest()
-  cat(sprintf("RUN [%d/%d] %s / %s / %s\n", i, nrow(jobs),
-              job$dataset_id, job$method, job$setting_id))
+  } else {
+    jobs$status[i] <- "running"
+    jobs$error[i] <- ""
+    cat(sprintf("RUN [%d/%d] %s / %s / %s\n", i, nrow(jobs),
+                job$dataset_id, job$method, job$setting_id))
 
-  tryCatch({
-    if (!identical(last_dataset, job$dataset_id)) {
-      dataset <- readRDS(job$input_file)
-      last_dataset <- job$dataset_id
+    run_error <- tryCatch({
+      if (!identical(last_dataset, job$dataset_id)) {
+        dataset <- readRDS(job$input_file)
+        if (is.null(dataset$simulated$dge) || is.null(dataset$simulated$truth$is_de)) {
+          stop("Not a generated custom-simulation dataset: ", job$input_file)
+        }
+        last_dataset <- job$dataset_id
+      }
+      simulated <- dataset$simulated
+      counts <- simulated$dge$counts
+      truth <- simulated$truth$is_de[match(rownames(counts), simulated$truth$gene)]
+      keep <- rowSums(counts) > 0
+      truth <- truth[keep]
+      analysis_dge <- simulated$dge[keep, , keep.lib.sizes = FALSE]
+      analysis_seed <- as.integer(dataset$seed + job$setting_index * 17L)
+      p <- run_method_setting(analysis_dge, spec, seed = analysis_seed)
+      gene_ids <- rownames(analysis_dge$counts)
+      truth <- truth[match(names(p), gene_ids)]
+      metrics <- summarize_method_result(p, truth)
+      result <- list(
+        dataset_id = job$dataset_id,
+        input_file = job$input_file,
+        simulation_scenario = dataset$scenario,
+        simulation_seed = dataset$seed,
+        analysis_seed = analysis_seed,
+        method = job$method,
+        setting_id = spec$setting_id,
+        setting_args = spec$args,
+        score_type = if (job$method == "NOISeq") "1 - NOISeq probability (ranking score)" else "p-value",
+        gene_results = data.frame(gene = names(p), p_value = p,
+                                  is_de = truth, adjusted_p_value = stats::p.adjust(p, "BH")),
+        metrics = metrics
+      )
+      dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+      tmp <- paste0(output_path, ".", Sys.getpid(), ".tmp")
+      saveRDS(result, tmp, compress = "xz")
+      if (!file.rename(tmp, output_path)) stop("Could not finalize analysis result.")
+      NULL
+    }, error = function(e) e)
+
+    if (inherits(run_error, "error")) {
+      jobs$status[i] <- "failed"
+      jobs$error[i] <- conditionMessage(run_error)
+      analysis_counts["failed"] <- analysis_counts["failed"] + 1L
+      cat("ERROR ", job$method, "/", spec$setting_id, ": ",
+          conditionMessage(run_error), "\n", sep = "")
+    } else {
+      jobs$status[i] <- "complete"
+      analysis_counts["complete"] <- analysis_counts["complete"] + 1L
+      cat("DONE ", basename(output_path), "\n", sep = "")
     }
-    simulated <- dataset$simulated
-    counts <- simulated$dge$counts
-    truth <- simulated$truth$is_de[match(rownames(counts), simulated$truth$gene)]
-    keep <- rowSums(counts) > 0
-    truth <- truth[keep]
-    analysis_dge <- simulated$dge[keep, , keep.lib.sizes = FALSE]
-    analysis_seed <- as.integer(dataset$seed + job$setting_index * 17L)
-    p <- run_method_setting(analysis_dge, spec, seed = analysis_seed)
-    gene_ids <- rownames(analysis_dge$counts)
-    truth <- truth[match(names(p), gene_ids)]
-    metrics <- summarize_method_result(p, truth)
-    result <- list(
-      dataset_id = job$dataset_id,
-      input_file = job$input_file,
-      simulation_scenario = dataset$scenario,
-      simulation_seed = dataset$seed,
-      analysis_seed = analysis_seed,
-      method = job$method,
-      setting_id = spec$setting_id,
-      setting_args = spec$args,
-      score_type = if (job$method == "NOISeq") "1 - NOISeq probability (ranking score)" else "p-value",
-      gene_results = data.frame(gene = names(p), p_value = p,
-                                is_de = truth, adjusted_p_value = stats::p.adjust(p, "BH")),
-      metrics = metrics
-    )
-    tmp <- paste0(output_path, ".", Sys.getpid(), ".tmp")
-    saveRDS(result, tmp, compress = "xz")
-    if (!file.rename(tmp, output_path)) stop("Could not finalize analysis result.")
-    record$status <- "complete"
-    cat("DONE ", basename(output_path), "\n", sep = "")
-  }, error = function(e) {
-    record$status <<- "failed"
-    record$error <<- conditionMessage(e)
-    cat("ERROR ", job$method, "/", spec$setting_id, ": ",
-        conditionMessage(e), "\n", sep = "")
-  })
-  analysis_counts[record$status] <- analysis_counts[record$status] + 1L
-  rows[[i]] <- record
-  write_manifest()
+  }
+
+  completed_since_checkpoint <- completed_since_checkpoint + 1L
+  if (completed_since_checkpoint >= manifest_checkpoint_every) {
+    write_manifest()
+    cat(sprintf("CHECKPOINT [%d/%d] manifest saved; %d new results calculated, %d failed, %d existing skipped.\n",
+                i, nrow(jobs), analysis_counts["complete"], analysis_counts["failed"],
+                analysis_counts["skipped"]))
+    completed_since_checkpoint <- 0L
+  }
 }
 write_manifest()
 cat(sprintf("ANALYSIS SUMMARY: %d calculated, %d failed, %d existing results skipped.\n",

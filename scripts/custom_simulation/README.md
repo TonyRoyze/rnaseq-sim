@@ -397,6 +397,14 @@ results are removed to bound storage. Results live under
 skipped on restart with the same arguments. Failed batches keep their datasets.
 Stop existing generation workers before switching to this pipeline.
 
+Analysis results are saved atomically one method-setting job at a time. If an
+analysis run is interrupted, rerun the same shard with the same options: existing
+result files are treated as completed save points and skipped. The analysis
+manifest is a resumable status snapshot written every 10,000 jobs and at the end
+of the run, rather than being rewritten for every job. Dataset metadata is read
+from filenames during planning; each dataset RDS is decompressed only when its
+analysis begins. Existing manifests are indexed once for resume lookups.
+
 For generation alone, use `run_batch.R --setting-batch 1 --settings-per-batch 100`.
 A setting includes its DE proportion; all selected replicates and references
 are included. Original job IDs and seeds remain unchanged. Regenerate one
