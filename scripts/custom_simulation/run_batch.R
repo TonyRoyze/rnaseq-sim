@@ -212,6 +212,16 @@ cat(sprintf("PLAN %.0f datasets total; %.0f assigned to %s\n",
             iterator$total, iterator$assigned, shard_label))
 flush.console()
 manifest_path <- file.path(shard_dir, "status.csv")
+progress_log_path <- file.path(shard_dir, "progress.log")
+write_progress <- function(text) {
+  line <- sprintf("[%s] %s\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S %z"), text)
+  cat(line)
+  tryCatch(cat(line, file = progress_log_path, append = TRUE), error = function(e) {
+    cat("WARNING could not append progress.log: ", conditionMessage(e), "\n",
+        sep = "", file = stderr())
+  })
+  flush.console()
+}
 if (options$plan_only) {
   cat("Preview (up to 10 assigned jobs):\n")
   preview <- iterator$next_batch(min(10L, options$batch_size))
@@ -298,13 +308,27 @@ run_job <- function(job, completed) {
     record$output_file <- existing[1]
     record$status <- "complete"
     append_status(record, manifest_path)
+    write_progress(sprintf("SKIP [%0.f/%0.f] %s | replicate %d/%d | already generated",
+      completed + 1, iterator$assigned, job$scenario_id, job$replicate, options$replicates))
     return(invisible("skipped"))
   }
   append_status(record, manifest_path)
-  cat(sprintf("RUN  [%.0f/%.0f] %s (groups=%d/%d, rep=%d, reference=%s)\n",
-              completed + 1, iterator$assigned, job$scenario_id, job$n_group1, job$n_group2,
-              job$replicate, reference_id))
-  flush.console()
+  started_at <- proc.time()[["elapsed"]]
+  write_progress(sprintf(paste0(
+    "TESTING [%0.f/%0.f] scenario %s\n",
+    "  replicate: %d/%d | model: %s | groups: %d vs %d (total %d samples)\n",
+    "  genes: %d | DE: %s (%d genes) | reference: %s\n",
+    "  dispersion: %s, scale %s | variance/mean: %s | library SD: %s\n",
+    "  fold-change minimum: %s | upregulated: %s | outliers: %s | sparsity: %s\n",
+    "  batch fraction: %s | batch effect: %s | seed: %d"),
+    completed + 1, iterator$assigned, job$scenario_id,
+    job$replicate, options$replicates, job$count_model, job$n_group1, job$n_group2,
+    job$n_group1 + job$n_group2, options$n_var, job$de_fraction, job$n_diffexp, reference_id,
+    job$dispersion_estimator,
+    if (job$count_model == "negative_binomial") job$dispersion_scale else "n/a",
+    job$variance_mean_ratio, job$library_size_sdlog, job$fold_change_min,
+    job$upregulated_fraction, job$outlier_fraction, job$sparsity,
+    job$batch_fraction, job$batch_effect, seed))
   tryCatch({
     simulation_params <- get_reference_parameters(reference_path, reference_hash)
     simulation <- simulate_custom_counts(
@@ -338,11 +362,14 @@ run_job <- function(job, completed) {
     ), temporary_output, compress = "xz")
     if (!file.rename(temporary_output, output_path)) stop("Could not finalize dataset file.")
     record$status <- "complete"
-    cat("DONE ", output_name, "\n", sep = "")
+    write_progress(sprintf("DONE  [%0.f/%0.f] %s | elapsed %.1f sec | output: %s",
+      completed + 1, iterator$assigned, job$scenario_id,
+      proc.time()[["elapsed"]] - started_at, output_name))
   }, error = function(e) {
     record$status <<- "failed"
     record$error <<- conditionMessage(e)
-    cat("ERROR ", job$scenario_id, ": ", conditionMessage(e), "\n", sep = "")
+    write_progress(sprintf("FAILED [%0.f/%0.f] %s | %s",
+      completed + 1, iterator$assigned, job$scenario_id, conditionMessage(e)))
   })
   append_status(record, manifest_path)
   invisible(record$status)
@@ -371,4 +398,5 @@ repeat {
               counts["complete"], counts["failed"], counts["skipped"]))
   rm(jobs)
 }
-cat("Finished ", shard_label, ". Status log: ", manifest_path, "\n", sep = "")
+write_progress(sprintf("FINISHED %s | status: %s | readable log: %s",
+  shard_label, manifest_path, progress_log_path))
