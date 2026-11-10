@@ -57,14 +57,17 @@ for(k in seq_along(keep)) {
   if (is.na(hash)) stop('Cannot read: ',src)
   # Short names prevent the repeated dataset ID from exceeding Windows limits.
   target <- if(result[i]) paste0(sub('/analysis/results/.*$','',rel),'/analysis/results/',hash,'.rds') else rel
-  action <- verified_copy(src,file.path(destination,target),hash)
-  rows[[k]] <- data.frame(source_relative=rel,export_relative=target,md5=hash,type=if(result[i])'result' else if(logs[i])'log' else 'metadata',action=action)
+  destination_file <- file.path(destination,target)
+  already_there <- file.exists(destination_file)
+  action <- verified_copy(src,destination_file,hash)
+  rows[[k]] <- data.frame(source_relative=rel,export_relative=target,md5=hash,type=if(result[i])'result' else if(logs[i])'log' else 'metadata',already_there=already_there,action=action)
   if(k %% 100L==0L) {cat('Verified',k,'of',length(keep),'files\n');flush.console()}
 }
 index <- do.call(rbind,rows)
 index_path <- file.path(destination,'export_index.csv')
+index_already_there <- file.exists(index_path)
 tmp_index <- tempfile('export-index-',tmpdir=destination,fileext='.csv')
 write.csv(index,tmp_index,row.names=FALSE)
 invisible(verified_copy(tmp_index,index_path,unname(tools::md5sum(tmp_index))))
 unlink(tmp_index)
-cat('Export complete:',sum(result),'analysis results verified. Destination:',destination,'\nIndex:',index_path,'\n')
+cat('Export complete:',sum(result),'analysis results verified;',sum(index$already_there[index$type=='result']),'already present in destination. Destination:',destination,'\nIndex:',index_path,'(already present:',index_already_there,')\n')
