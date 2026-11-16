@@ -191,3 +191,10 @@ copies of every job. At the configured 30 replicates the full experiment has
 The `Reference` field is used only in `brca` mode; random mode uses the four
 paths in the generator's `references` defaults. Keep Base-Seed and experiment
 settings identical across method pools so reference draws agree.
+
+## 100 numbered assignments
+
+[config/assignments_100/README.md](../config/assignments_100/README.md) contains
+100 ready-to-run configs, the method-pool allocation, initial assignments for
+30 machines and a manual assignment register. Pass `--config` explicitly;
+the default machine config does not automatically select these files.

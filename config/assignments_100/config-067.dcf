@@ -1,0 +1,21 @@
+# Assignment 067: edgeR.lrt, part 3 of 4.
+# Assign this config to only one physical machine at a time.
+Job-Start: 68041
+Job-End: 102060
+Workers: 6
+Jobs-Per-Batch: 20
+Output: results/assignments_100_v5.2/config-067-edgeR.lrt
+Stage: both
+Profile: core
+Replicates: 30
+N-Var: 10000
+Base-Seed: 20261024
+Reference-Mode: random
+Reference: data/DGElist_BRCA.rds
+Dispersion-Estimator: method_of_moments
+Underdispersion-Model: generalized_poisson
+Include-Imbalance: true
+DE-Mode: fixed
+DE-Proportions: 0.05,0.25,0.75
+Methods:
+    edgeR.lrt
