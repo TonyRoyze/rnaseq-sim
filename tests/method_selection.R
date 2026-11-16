@@ -25,3 +25,13 @@ writeLines(sub('    NBPSeq','    # NBPSeq',fixture,fixed=TRUE),path)
 stopifnot(inherits(try(read_machine_config(path),silent=TRUE),'try-error'))
 unlink(path)
 cat('PASS: uncomment selection, multi-method pools, full profile preservation and invalid/empty selections\n')
+
+core <- make_method_settings('core')
+expected <- c(ABSSeq=6L, DESeq=1L, DESeq2=3L, DSS=4L, NBPSeq=2L,
+              NOISeq=4L, ROTS=2L, T.test=5L, Wilcoxon=5L,
+              edgeR.lrt=5L, edgeR.qlf=5L, voom=5L)
+observed <- table(vapply(core, `[[`, character(1), 'method'))
+stopifnot(identical(as.integer(observed[names(expected)]), unname(expected)))
+for (spec in core) if (!spec$baseline)
+  stopifnot(grepl('^(norm_method|size_factor)-', spec$setting_id))
+cat('PASS: exactly 47 requested method/normalization labels, no other parameter variants\n')

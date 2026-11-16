@@ -2,7 +2,7 @@ build_scenarios <- function(n_var, include_imbalance = TRUE, underdispersion_mod
   underdispersion_model <- match.arg(underdispersion_model, c("generalized_poisson", "com_poisson"))
   # s denotes the balanced size; each split preserves the total of 2*s.
   sizes <- do.call(rbind, lapply(c(3L, 5L, 10L, 30L, 50L), function(s) {
-    fractions <- if (include_imbalance) c(0.5, 0.25, 0.125) else 0.5
+    fractions <- if (include_imbalance) c(0.5, 0.25) else 0.5
     n1 <- as.integer(floor(2 * s * fractions + 0.5))
     result <- data.frame(s = s, n_group1 = n1, n_group2 = 2L * s - n1,
                          minority_fraction_target = fractions)
@@ -12,11 +12,11 @@ build_scenarios <- function(n_var, include_imbalance = TRUE, underdispersion_mod
   make_family <- function(model) {
     grid <- expand.grid(
       size_index = seq_len(nrow(sizes)),
-      fold_change_min = c(1, 2, 4),
-      upregulated_fraction = c(0.25, 0.50, 0.75),
-      library_size_sdlog = c(0, 0.25, 0.50),
+      fold_change_min = 2,
+      upregulated_fraction = c(0.25, 0.50),
+      library_size_sdlog = 0,
       outlier_fraction = c(0, 0.001, 0.01),
-      sparsity = c(0, 0.10, 0.30),
+      sparsity = c(0, 0.10),
       batch_effect = c(1, 1.5),
       dispersion_scale = if (model == "negative_binomial") c(0.5, 1, 2) else 1,
       KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE
@@ -28,6 +28,7 @@ build_scenarios <- function(n_var, include_imbalance = TRUE, underdispersion_mod
     grid$variance_mean_ratio <- if (model == "poisson") 1 else NA_real_
     grid$dispersion_regime <- if (model == "poisson") "equi" else "over"
     grid$design <- "full_factorial"
+    grid$fixed_fold_change <- TRUE
     grid$sample_size_baseline <- grid$s
     grid$s[grid$n_group1 != grid$n_group2] <- NA_integer_
     grid$varied_factor <- "full_factorial"

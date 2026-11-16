@@ -1,2 +1,2 @@
 # Shared simulation format and default output version.
-simulation_version <- "5.1"
+simulation_version <- "5.2"

@@ -6,6 +6,11 @@ for(e in parse('scripts/simulation_counts/run_batch.R')) {
   if(is.call(e) && identical(e[[1]],as.name('<-')) && identical(e[[2]],as.name('parse_args'))) eval(e)
 }
 cfg <- read_machine_config('config/machine.dcf')
+configured <- parse_args(machine_simulation_args(cfg))
+stopifnot(configured$reference_mode == 'random',
+          identical(configured$references, c('data/DGElist_BRCA.rds',
+            'data/DGElist_E-ENAD-34.rds', 'data/DGElist_GSE150910.rds',
+            'data/DGElist_LUSC.rds')))
 ranges <- machine_worker_ranges(cfg)
 stopifnot(ranges$start[1]==cfg[['Job-Start']],tail(ranges$end,1)==cfg[['Job-End']],
   all(tail(ranges$start,-1)==head(ranges$end,-1)+1))

@@ -4,8 +4,10 @@ prepare_simulation_design <- function(
     params, s, n_var, n_diffexp, count_model, dispersion_scale,
     dispersion_source, dispersion_estimator, library_size_factors, library_size_sdlog,
     fold_change_min, fold_change_excess_rate, upregulated_fraction,
-    batch, batch_fraction, batch_effect, group_sizes = NULL) {
+    batch, batch_fraction, batch_effect, group_sizes = NULL, fixed_fold_change = FALSE) {
 
+  if (!is.logical(fixed_fold_change) || length(fixed_fold_change) != 1L || is.na(fixed_fold_change))
+    stop("fixed_fold_change must be TRUE or FALSE.")
   validate_simulation_scalar(s, "s", 1, Inf)
   validate_simulation_scalar(n_var, "n_var", 1, Inf)
   validate_simulation_scalar(n_diffexp, "n_diffexp", 0, n_var)
@@ -110,12 +112,13 @@ prepare_simulation_design <- function(
     up_index <- de_index[seq_len(n_up)]
     down_index <- if (n_up < n_diffexp) de_index[seq.int(n_up + 1L, n_diffexp)] else integer(0)
     if (length(up_index)) {
-      fold_change[up_index] <- fold_change_min + stats::rexp(length(up_index), fold_change_excess_rate)
+      fold_change[up_index] <- if (fixed_fold_change) fold_change_min else
+        fold_change_min + stats::rexp(length(up_index), fold_change_excess_rate)
       direction[up_index] <- "up"
     }
     if (length(down_index)) {
-      fold_change[down_index] <- 1 / (fold_change_min +
-        stats::rexp(length(down_index), fold_change_excess_rate))
+      fold_change[down_index] <- if (fixed_fold_change) 1 / fold_change_min else
+        1 / (fold_change_min + stats::rexp(length(down_index), fold_change_excess_rate))
       direction[down_index] <- "down"
     }
   }

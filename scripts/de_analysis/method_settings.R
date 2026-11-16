@@ -1,5 +1,5 @@
 # Setting profiles and method adapters for the existing DE method set.
-# Each method gets a baseline plus one-factor-at-a-time variants.
+# Each method gets a baseline plus normalization-only variants.
 
 make_method_settings <- function(profile = c("core", "quick")) {
   profile <- match.arg(profile)
@@ -23,14 +23,10 @@ make_method_settings <- function(profile = c("core", "quick")) {
   base <- list(fit_type = "parametric", size_factor = "ratio",
                independent_filtering = TRUE, cooks_cutoff = TRUE)
   add("DESeq2", "default", base, baseline = TRUE)
-  add_one_factor("DESeq2", base, "fit_type", c("local", "mean"), c("local", "mean"))
   add_one_factor("DESeq2", base, "size_factor", c("poscounts", "iterate"), c("poscounts", "iterate"))
-  add_one_factor("DESeq2", base, "independent_filtering", list(FALSE), "off")
-  add_one_factor("DESeq2", base, "cooks_cutoff", list(FALSE), "off")
 
-  base <- list(fit_type = "local")
+  base <- list(fit_type = NULL)
   add("DESeq", "default", base, baseline = TRUE)
-  add_one_factor("DESeq", base, "fit_type", "parametric", "parametric")
 
   for (method in c("edgeR.lrt", "edgeR.qlf")) {
     base <- list(norm_method = "TMM", robust = FALSE)
@@ -38,7 +34,6 @@ make_method_settings <- function(profile = c("core", "quick")) {
     add_one_factor(method, base, "norm_method",
                    c("TMMwsp", "RLE", "upperquartile", "none"),
                    c("TMMwsp", "RLE", "upperquartile", "none"))
-    add_one_factor(method, base, "robust", list(TRUE), "on")
   }
 
   # The abundance-trended DSS setting repeatedly failed with
@@ -47,59 +42,42 @@ make_method_settings <- function(profile = c("core", "quick")) {
   add("DSS", "default", base, baseline = TRUE)
   add_one_factor("DSS", base, "norm_method", c("quantile", "total", "median"),
                  c("quantile", "total", "median"))
-  add_one_factor("DSS", base, "equal_var", list(TRUE), "equal-var")
 
   base <- list(norm_method = "TMM", voom_norm = "none", robust = FALSE, trend = FALSE)
   add("voom", "default", base, baseline = TRUE)
   add_one_factor("voom", base, "norm_method",
                  c("TMMwsp", "RLE", "upperquartile", "none"),
                  c("TMMwsp", "RLE", "upperquartile", "none"))
-  add_one_factor("voom", base, "voom_norm", c("quantile"), "quantile")
-  add_one_factor("voom", base, "robust", list(TRUE), "robust")
-  add_one_factor("voom", base, "trend", list(TRUE), "trend")
 
   rank_norms <- c("TMM", "TMMwsp", "RLE", "upperquartile")
   base <- list(norm_method = "none", prior_count = 1, exact = NA)
   add("Wilcoxon", "default", base, baseline = TRUE)
   add_one_factor("Wilcoxon", base, "norm_method", rank_norms,
                  c("TMM", "TMMwsp", "RLE", "upperquartile"))
-  add_one_factor("Wilcoxon", base, "prior_count", list(0.5), "prior-0.5")
-  add_one_factor("Wilcoxon", base, "exact", list(FALSE), "asymptotic")
 
   base <- list(norm_method = "none", prior_count = 1, equal_var = FALSE)
   add("T.test", "default", base, baseline = TRUE)
   add_one_factor("T.test", base, "norm_method", rank_norms,
                  c("TMM", "TMMwsp", "RLE", "upperquartile"))
-  add_one_factor("T.test", base, "prior_count", list(0.5), "prior-0.5")
-  add_one_factor("T.test", base, "equal_var", list(TRUE), "equal-var")
 
   base <- list(norm_method = "AH2010")
   add("NBPSeq", "default", base, baseline = TRUE)
   add_one_factor("NBPSeq", base, "norm_method", list(NULL), "none")
-  add_one_factor("NBPSeq", base, "dispersion_model", c("NBP", "NB2"), c("NBP", "NB2"))
 
   base <- list(norm_method = "tmm", k = 0.5, permutations = 50,
                smoothing = 1.5, filter = 1)
   add("NOISeq", "default", base, baseline = TRUE)
-  add_one_factor("NOISeq", base, "norm_method", c("uqua", "n"), c("uqua", "none"))
-  add_one_factor("NOISeq", base, "k", list(1), "k-1")
-  add_one_factor("NOISeq", base, "permutations", list(100), "perm-100")
-  add_one_factor("NOISeq", base, "smoothing", c(0.5, 2), c("smooth-0.5", "smooth-2"))
-  add_one_factor("NOISeq", base, "filter", list(0), "filter-off")
+  add_one_factor("NOISeq", base, "norm_method", c("uqua", "n", "n"), c("uqua", "n", "none"))
 
   base <- list(norm_method = NULL, replace_outliers = TRUE, use_a_fold = FALSE)
   add("ABSSeq", "package-default", base, baseline = TRUE)
   add_one_factor("ABSSeq", base, "norm_method",
                  c("TMM", "qtotal", "total", "quartile", "geometric"),
                  c("TMM", "qtotal", "total", "quartile", "geometric"))
-  add_one_factor("ABSSeq", base, "replace_outliers", list(FALSE), "keep-outliers")
-  add_one_factor("ABSSeq", base, "use_a_fold", list(TRUE), "aFold")
 
   base <- list(norm_method = "TMM", bootstrap = 1000, top_k = NULL)
   add("ROTS", "default", base, baseline = TRUE)
   add_one_factor("ROTS", base, "norm_method", list("none"), "none")
-  add_one_factor("ROTS", base, "bootstrap", c(100, 500), c("B-100", "B-500"))
-  add_one_factor("ROTS", base, "top_k", list(500), "K-500")
 
   if (profile == "quick") {
     settings <- Filter(function(x) x$baseline || x$quick, settings)
@@ -146,7 +124,8 @@ run_method_setting <- function(dge, setting, seed = 1L) {
     suppressPackageStartupMessages(library(locfit))
     cds <- DESeq::newCountDataSet(counts, groups)
     cds <- DESeq::estimateSizeFactors(cds)
-    cds <- DESeq::estimateDispersions(cds, fitType = args$fit_type)
+    cds <- if (is.null(args$fit_type)) DESeq::estimateDispersions(cds) else
+      DESeq::estimateDispersions(cds, fitType = args$fit_type)
     result <- DESeq::nbinomTest(cds, levels(groups)[1], levels(groups)[2])
     p <- result$pval
     names(p) <- result$id

@@ -9,7 +9,7 @@ stopifnot(parse_args(character())$underdispersion_model == 'generalized_poisson'
 stopifnot(inherits(try(parse_args(c('--underdispersion-model','invalid')),silent=TRUE),'try-error'))
 for(model in c('generalized_poisson','com_poisson')) {
  sc <- build_scenarios(100,underdispersion_model=model)
- stopifnot(nrow(sc)==40824, sum(sc$count_model==model)==17496,
+ stopifnot(nrow(sc)==1512, sum(sc$count_model==model)==648,
            !anyDuplicated(sc$scenario_id))
 }
 set.seed(42)

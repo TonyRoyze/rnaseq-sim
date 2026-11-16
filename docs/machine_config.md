@@ -149,3 +149,45 @@ A real two-worker `Stage: both` smoke test completed generation plus all quick
 T.test settings for two datasets, with no other methods in the manifests.
 Standalone T.test/Wilcoxon selection also completed with no unselected methods.
 These checks used a small synthetic reference, not a full throughput benchmark.
+
+## Reduced experiment configuration (version 5.2)
+
+The current factor levels and exact group sizes are listed in
+[custom_simulation.md](custom_simulation.md#design-used). DE proportions in
+`config/machine.dcf` are `0.05,0.25,0.75`; the example uses 30 replicates,
+10,000 genes, six workers, jobs 1–600, and NBPSeq only. Uncomment the other
+methods to enable them. The new default Output is `results/machine_run_002`;
+use a fresh folder for this experiment and stop existing workers before updating.
+
+`Profile: core` now includes only each method's baseline and the requested
+normalization variants. Other fitting, robustness, filtering and resampling
+variants are excluded. `quick` selects a smaller subset for smoke checks.
+
+| Method | Baseline | Additional normalization labels |
+| --- | --- | --- |
+| ABSSeq | Package default | TMM, geometric, qtotal, quartile, total |
+| DESeq | Package default | none |
+| DESeq2 | Package default | iterate, poscounts |
+| DSS | lr | median, quantile, total |
+| NBPSeq | AH2010 | none |
+| NOISeq | TMM (`tmm`) | n, upper quartile (`uqua`), none |
+| ROTS | TMM | none |
+| T.test | none | RLE, TMM, TMMwsp, upperquartile |
+| Wilcoxon | none | RLE, TMM, TMMwsp, upperquartile |
+| edgeR.lrt | TMM | RLE, TMMwsp, none, upperquartile |
+| edgeR.qlf | TMM | RLE, TMMwsp, none, upperquartile |
+| voom | TMM | RLE, TMMwsp, none, upperquartile |
+
+There are 47 labels across all 12 methods. NOISeq's `n` and `none` labels both
+pass `norm="n"`; they are retained as requested but represent the same
+normalization. ABSSeq's explicit qtotal variant is retained alongside its
+package-default baseline. NBPSeq's none variant passes `NULL`.
+
+The machine config now uses `Reference-Mode: random`: each dataset selects one
+of BRCA, E-ENAD-34, GSE150910 or LUSC with equal probability using its seeded
+reference-selection stream. SCLC is excluded. This does not generate four
+copies of every job. At the configured 30 replicates the full experiment has
+136,080 dataset jobs; the example machine still runs only IDs 1–600.
+The `Reference` field is used only in `brca` mode; random mode uses the four
+paths in the generator's `references` defaults. Keep Base-Seed and experiment
+settings identical across method pools so reference draws agree.

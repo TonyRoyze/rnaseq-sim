@@ -13,7 +13,7 @@ Rscript scripts/simulation_counts/run_batch.R
 ```
 
 The default reference mode uses `data/DGElist_BRCA.rds`, and outputs go to
-`results/custom_simulation_v5.1/`. The runner supports three reference modes:
+`results/custom_simulation_v5.2/`. The runner supports three reference modes:
 
 - `--reference-mode brca` (default): use only `--reference` (defaults to
   `data/DGElist_BRCA.rds`).
@@ -46,53 +46,49 @@ both per-gene estimates are recorded in each dataset RDS.
 
 ## Design used
 
-The runner generates a **full factorial design**: every combination of these
-levels, separately for Poisson and negative-binomial count models:
+The runner generates the reduced **full factorial design**:
 
-- Samples per group: 3, 5, 10, 30, 50.
-- Minimum fold-change magnitude: 1, 2, 4.
-- Upregulated fraction among DE genes: 0.25, 0.50, 0.75.
-- Library-size variation (sdlog): 0, 0.25, 0.50.
+- Balanced sample-size anchors: 3, 5, 10, 30, 50 per group.
+- DE proportions: 0.05, 0.25, 0.75 (fixed mode crosses all three).
+- Exact DE fold-change magnitude: 2 (upregulated 2, downregulated 0.5).
+- Upregulated fraction among DE genes: 0.25, 0.50.
+- Library-size variation (sdlog): 0; all imposed library factors equal 1.
 - Outlier fraction: 0, 0.001, 0.01.
-- Extra-zero sparsity: 0, 0.10, 0.30.
+- Extra-zero sparsity: 0, 0.10.
 - Batch-effect multiplier: 1, 1.5 (batch fraction stays 0.50).
-- Dispersion scale: 0.5, 1, 2 for negative binomial; fixed at 1 for Poisson
-  (dispersion does not affect Poisson generation).
+- Underdispersion variance/mean ratios: 0.2, 0.5, 0.81, using generalized
+  Poisson by default (COM-Poisson remains an alternative model).
+- Poisson is the zero-dispersion regime; its variance/mean ratio is 1.
+- Negative-binomial dispersion multipliers: 0.5, 1, 2.
 
-DE mode 3 is now the default and crosses every combination with all seven
-DE proportions. There are 2,430 Poisson and 7,290 negative-binomial base
-combinations, or **68,040 balanced datasets per replicate** after DE expansion.
-With 100 replicates and one reference, the balanced-only subset produces
-**6,804,000 datasets**.
-Reference mode `all` multiplies this by the number of references. Shards divide
-this total; they do not multiply it.
+Sample imbalance is included by default. Balanced allocation is labelled 1;
+0.25 means the smaller group's target fraction of the total, rather than a
+smaller/larger ratio. Each nominal size `s` keeps total samples at `2*s`.
+Minority sizes round to nearest integer (halves upward). Splits with fewer
+than 3 samples in either group are omitted; duplicate rounded splits are removed:
 
-Sample imbalance is **included by default** and crossed with all other
-factors. Each nominal size `s` keeps total samples at `2*s`, with balanced,
-1:3, and 1:7 splits. Minority sizes round to nearest integer (halves upward).
-Splits with fewer than 3 samples in either group are omitted; duplicate
-rounded splits are removed. The actual splits are:
-
-- s=3: 3/3.
+- s=3: 3/3 only (the imbalanced split is excluded).
 - s=5: 5/5, 3/7.
-- s=10: 10/10, 5/15, 3/17.
-- s=30: 30/30, 15/45, 8/52.
-- s=50: 50/50, 25/75, 13/87.
+- s=10: 10/10, 5/15.
+- s=30: 30/30, 15/45.
+- s=50: 50/50, 25/75.
 
-These 12 sample splits yield **163,296 datasets per replicate** in default
-DE mode 3: 40,824 Poisson and 122,472 negative-binomial. With 100 replicates
-and one reference, the total is **16,329,600 datasets**. Use `--no-imbalance`
-for the balanced-only subset; `--include-imbalance` explicitly selects the
-default. `sample_size_baseline` records nominal `s`; `n_group1`, `n_group2`,
-and `n_samples` record actual sizes. For unequal groups the legacy `s` field
-is `NA`. The simulator continues to accept arbitrary explicit `group_sizes`.
+These nine splits give 1,512 base scenarios: 216 Poisson, 648 negative-binomial,
+and 648 underdispersed. With all three DE proportions there are **4,536
+settings per replicate**, or **453,600 datasets at 100 replicates** with one
+reference. The balanced-only subset has 840 base scenarios, 2,520 settings
+per replicate and 252,000 datasets at 100 replicates. Reference mode `all`
+multiplies totals by the reference count; shards divide the work.
 
-A minimum fold change of 1 allows weak effects: DE magnitudes are the minimum
-plus an exponential draw, with reciprocals for downregulated genes.
-Scenario IDs encode all factor levels and the design is recorded as
-`full_factorial` in manifests and dataset metadata. Existing output files are
-not relabeled. Use a separate `--output` folder if it already contains results
-from the previous one-factor-at-a-time design.
+Use `--no-imbalance` for the balanced-only subset. `sample_size_baseline`
+records nominal `s`; `n_group1`, `n_group2`, and `n_samples` record actual
+sizes. For unequal groups the legacy `s` field is `NA`. The public simulator
+still accepts arbitrary `group_sizes` and its default random effect sizes;
+the factorial runner explicitly requests `fixed_fold_change = TRUE`.
+
+Scenario IDs encode the varied levels; metadata records `full_factorial` and
+`fixed_fold_change`. Version 5.2 uses a new output namespace. Use a fresh output
+folder when changing the design; existing results must not be mixed with it.
 
 The planner retains only the base combinations and at most `--batch-size`
 expanded job records (default 1000). It computes each shard's job IDs directly,
@@ -228,7 +224,7 @@ can be inspected and retried.
 Each shard writes into its own directory, for example:
 
 ```text
-results/custom_simulation_v5.1/
+results/custom_simulation_v5.2/
 ├── parameters-<reference-md5>.rds
 ├── shard-001-of-004/
 │   ├── status.csv
@@ -271,7 +267,7 @@ outputs, use shared/object storage and keep a manifest plus checksums in Git.
 ## DE proportion selection
 
 Use `--de-mode 1`, `--de-mode 2`, or `--de-mode 3` (names below also work).
-All modes use `0.1,0.2,0.3,0.4,0.5,0.6,0.75` unless overridden with
+All modes use `0.05,0.25,0.75` unless overridden with
 `--de-proportions 0.1,0.3,0.5`.
 
 1. **combination**: independently select one proportion for each scenario
@@ -289,7 +285,7 @@ replicate, reproducibly from `--base-seed`. Proportions are assigned before
 reference expansion and sharding, so references and workers agree. These modes
 select the proportion; gene identities are still sampled by each simulation.
 The old separate DE-proportion factor sweep is replaced by this mode selection.
-Mode 1/2 creates 23,328 scenarios per replicate; mode 3 creates 163,296 with all seven
+Mode 1/2 creates 1,512 scenarios per replicate; mode 3 creates 4,536 with all three
 proportions (with default imbalance), before multiplying by references in reference mode `all`.
 Mode and selected proportion are saved in scenario IDs, manifests, and RDS
 scenario metadata. Existing output datasets are left untouched; use a fresh
@@ -305,8 +301,8 @@ Rscript scripts/simulation_counts/run_batch.R --de-mode 3 --replicates 3
 
 ## Simulation version
 
-The current simulation version is **5.1**. The default generation output and
-analysis input are `results/custom_simulation_v5.1`. Use `--output PATH` on the
+The current simulation version is **5.2**. The default generation output and
+analysis input are `results/custom_simulation_v5.2`. Use `--output PATH` on the
 generator or `--input PATH` on the analysis runner to override these paths.
 Each generated dataset RDS and each manifest row record `simulation_version`.
 Existing datasets are not moved or relabeled.
@@ -389,7 +385,7 @@ The pipeline generates all replicates for 100 settings, runs the core method
 analysis, retains per-replicate metrics and reproducibility metadata, and
 removes simulated datasets after successful analysis. Gene-level analysis
 results are removed to bound storage. Results live under
-`results/custom_simulation_pipeline_v5.1/batch-*/analysis/`. Completed batches are
+`results/custom_simulation_pipeline_v5.2/batch-*/analysis/`. Completed batches are
 skipped on restart with the same arguments. Failed batches keep their datasets.
 Stop existing generation workers before switching to this pipeline.
 
@@ -420,7 +416,7 @@ Rscript scripts/simulation_pipeline/run_pipeline.R \
 
 Use shard indices 1 through 5 on separate workers. Each pipeline worker owns
 its own configuration, completion markers and analysis directory under
-`results/custom_simulation_pipeline_v5.1/shard-001-of-005/` (and equivalent shards).
+`results/custom_simulation_pipeline_v5.2/shard-001-of-005/` (and equivalent shards).
 
 Settings now belong entirely to one worker (`--shard-unit setting`, the
 default): replicas 1 through 100 run consecutively on that worker. The legacy
@@ -436,7 +432,7 @@ exactly the experiment flags used to generate the datasets:
 
 ```sh
 Rscript scripts/simulation_pipeline/migrate_pipeline.R \
-  --source results/custom_simulation_pipeline_v5.1 -- \
+  --source results/custom_simulation_pipeline_v5.2 -- \
   --replicates 100 --reference-mode random --shard-count 5 --shard-index 3 \
   --dispersion-estimator edgeR --no-restore
 ```
@@ -462,8 +458,8 @@ In PowerShell, replace `E:` with your portable disk drive letter:
 Rscript scripts/result_transfer/export_results.R --destination "E:/RNA-results"
 ```
 
-The source defaults to `results/custom_simulation_pipeline_v5.1`. Override with
-`--source "C:/path/to/results/custom_simulation_pipeline_v5.1"` if needed.
+The source defaults to `results/custom_simulation_pipeline_v5.2`. Override with
+`--source "C:/path/to/results/custom_simulation_pipeline_v5.2"` if needed.
 The export includes saved analysis result RDS files, analysis manifests,
 pipeline run logs, worker options and completed-batch markers. It excludes simulated datasets,
 parameter caches and simulation logs. It also includes saved results from

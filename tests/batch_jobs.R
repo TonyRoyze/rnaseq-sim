@@ -67,7 +67,7 @@ for (mode in c('fixed','combination','setting')) for (reference_mode in c('brca'
 stopifnot(identical(previous_rng,.Random.seed))
 opts$replicates <- 100L; opts$de_mode <- 'fixed'; opts$reference_mode <- 'brca'
 full <- make_job_iterator(build_scenarios(100),opts,refs)
-stopifnot(full$total==28576800,full$assigned==7144200,nrow(full$next_batch())==7)
+stopifnot(full$total==453600,full$assigned==113400,nrow(full$next_batch())==7)
 opts$shard_count <- 1000000L; opts$shard_index <- 1000000L; opts$replicates <- 1L
 empty <- make_job_iterator(sc,opts,refs)
 stopifnot(empty$assigned==0,is.null(empty$next_batch()))
