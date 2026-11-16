@@ -1,12 +1,12 @@
 # Run from the project root: Rscript --vanilla tests/batch_jobs.R
 simulation_version <- '4.0'
-for (e in parse('scripts/custom_simulation/run_batch.R')) {
+for (e in parse('scripts/simulation_counts/run_batch.R')) {
   if (is.call(e) && identical(e[[1]], as.name('<-')) &&
-      as.character(e[[2]])[1] %in% c('parse_args', 'run_job')) eval(e)
+      as.character(e[[2]])[1] %in% c('parse_args', 'run_job', 'write_progress')) eval(e)
 }
-source('scripts/custom_simulation/factorial_design.R')
-source('scripts/custom_simulation/batch_jobs.R')
-source('scripts/custom_simulation/de_proportion_modes.R')
+source('scripts/simulation_design/factorial_design.R')
+source('scripts/simulation_design/batch_jobs.R')
+source('scripts/simulation_design/de_proportion_modes.R')
 opts <- parse_args(c('--replicates','3','--batch-size','7'))
 stopifnot(inherits(try(parse_args(c('--batch-size','0')),silent=TRUE),'try-error'))
 sc <- build_scenarios(100)
@@ -79,7 +79,9 @@ shard_dir <- file.path(output_root,'shard-001-of-004'); dir.create(shard_dir)
 old_dir <- file.path(output_root,'shard-002-of-004'); dir.create(old_dir)
 output_dirs <- c(shard_dir,old_dir)
 manifest_path <- file.path(shard_dir,'status.csv')
+progress_log_path <- file.path(shard_dir,'progress.log')
 iterator <- list(assigned=2)
+options <- opts
 job <- actual[1,,drop=FALSE]
 job$reference <- 'unused'; job$n_var <- 100
 get_reference_parameters <- function(...) list()

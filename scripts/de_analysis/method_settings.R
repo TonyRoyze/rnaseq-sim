@@ -41,6 +41,8 @@ make_method_settings <- function(profile = c("core", "quick")) {
     add_one_factor(method, base, "robust", list(TRUE), "on")
   }
 
+  # The abundance-trended DSS setting repeatedly failed with
+  # "missing values not allowed"; retain the other DSS settings.
   base <- list(norm_method = "lr", dispersion_trend = FALSE, equal_var = FALSE)
   add("DSS", "default", base, baseline = TRUE)
   add_one_factor("DSS", base, "norm_method", c("quantile", "total", "median"),
@@ -277,4 +279,16 @@ summarize_method_result <- function(p, truth, alpha = 0.05) {
     discoveries = sum(called),
     alpha = alpha
   )
+}
+
+# Filter whole methods while retaining every setting in the chosen profile.
+select_method_settings <- function(settings, methods = NULL) {
+  if (is.null(methods)) return(settings)
+  supported <- unique(vapply(settings, `[[`, character(1), "method"))
+  if (!length(methods) || anyNA(methods) || any(!nzchar(methods)) || anyDuplicated(methods))
+    stop("Select at least one method; empty or duplicate method names are invalid.")
+  unknown <- setdiff(methods, supported)
+  if (length(unknown)) stop("Unknown methods: ", paste(unknown, collapse=", "),
+                            ". Supported: ", paste(supported, collapse=", "))
+  settings[vapply(settings, function(spec) spec$method %in% methods, logical(1))]
 }

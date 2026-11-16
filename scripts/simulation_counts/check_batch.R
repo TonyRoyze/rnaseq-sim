@@ -14,7 +14,7 @@ opts <- list(output=paste0("results/custom_simulation_v", simulation_version),
   dispersion_estimator="method_of_moments", include_imbalance=TRUE, deep=FALSE)
 a <- commandArgs(TRUE)
 if (any(a %in% c("--help","-h"))) {
-  cat("Usage: Rscript scripts/custom_simulation/check_batch.R [same design flags as run_batch.R] [--deep]\n",
+  cat("Usage: Rscript scripts/simulation_counts/check_batch.R [same design flags as run_batch.R] [--deep]\n",
       "Options: --output PATH --reference-mode brca|all|random --reference PATH\n",
       "         --references PATHS --replicates N --shard-count N --n-var N\n",
       "         --underdispersion-model generalized_poisson|com_poisson\n",
@@ -50,9 +50,9 @@ if(!dir.exists(root)) stop("Output directory not found: ",root)
 ref_paths <- vapply(if(opts$reference_mode=="brca") opts$reference else opts$references,resolve_path,character(1))
 if(any(!file.exists(ref_paths))) stop("Reference files must be present to reproduce job IDs.")
 refs <- data.frame(reference_id=tools::file_path_sans_ext(basename(ref_paths)),reference=ref_paths,reference_hash=unname(tools::md5sum(ref_paths)))
-source("scripts/custom_simulation/factorial_design.R")
-source("scripts/custom_simulation/batch_jobs.R")
-source("scripts/custom_simulation/de_proportion_modes.R")
+source("scripts/simulation_design/factorial_design.R")
+source("scripts/simulation_design/batch_jobs.R")
+source("scripts/simulation_design/de_proportion_modes.R")
 scenarios <- build_scenarios(opts$n_var,opts$include_imbalance,opts$underdispersion_model)
 dirs <- list.dirs(root,recursive=FALSE,full.names=TRUE)
 dirs <- dirs[grepl("^shard-[0-9]+-of-[0-9]+$",basename(dirs))]

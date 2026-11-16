@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Reproducibly generate and checkpoint the full-factorial simulation suite.
-# Run from any working directory with Rscript scripts/custom_simulation/run_batch.R.
+# Run from any working directory with Rscript scripts/simulation_counts/run_batch.R.
 
 all_args <- commandArgs(trailingOnly = FALSE)
 script_arg <- grep("^--file=", all_args, value = TRUE)
@@ -8,10 +8,10 @@ if (!length(script_arg)) stop("Run this script with Rscript.")
 script_path <- normalizePath(sub("^--file=", "", script_arg[1]), mustWork = TRUE)
 project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork = TRUE)
 setwd(project_root)
-source("scripts/custom_simulation/pipeline_logging.R")
+source("scripts/shared/pipeline_logging.R")
 start_pipeline_log()
 
-source("scripts/custom_simulation/version.R")
+source("scripts/shared/version.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 parse_args <- function(args) {
@@ -25,6 +25,7 @@ parse_args <- function(args) {
       "data/DGElist_LUSC.rds"
     ),
     output = paste0("results/custom_simulation_v", simulation_version),
+    parameter_cache_dir = NULL,
     shard_index = 1L,
     shard_count = 1L,
     replicates = 1L,
@@ -33,6 +34,7 @@ parse_args <- function(args) {
     shard_unit = "setting",
     settings_per_batch = 100L,
     job_index = 0L,
+    job_start = NULL, job_end = NULL,
     de_mode = "fixed",
     underdispersion_model = "generalized_poisson",
     de_proportions = c(0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75),
@@ -49,19 +51,22 @@ parse_args <- function(args) {
   }
   if ("--help" %in% args || "-h" %in% args) {
     cat(paste(
-      "Usage: Rscript scripts/custom_simulation/run_batch.R [options]",
+      "Usage: Rscript scripts/simulation_counts/run_batch.R [options]",
       "",
       "Options:",
       "  --reference PATH      Real edgeR DGEList RDS (default: data/DGElist_BRCA.rds)",
       "  --reference-mode MODE brca (default), all, or random",
       "  --references PATHS    Comma-separated RDS paths for all/random modes",
       paste0("  --output PATH         Output directory (default: results/custom_simulation_v", simulation_version, ")"),
+      "  --parameter-cache-dir PATH Shared reference parameter cache (default: output root)",
       "  --version             Print simulation version and exit",
       "  --shard-index N       This shard, starting at 1 (default: 1)",
       "  --shard-count N       Total shards/workers (default: 1)",
       "  --shard-unit UNIT    setting (default) keeps replicates together; job uses legacy sharding",
       "  --setting-batch N    Select a batch of settings (1-based; 0 selects all)",
       "  --settings-per-batch N Settings per selected batch (default: 100)",
+      "  --job-start N        First original job ID (inclusive; pair with --job-end)",
+      "  --job-end N          Last original job ID (inclusive)",
       "  --job-index N        Regenerate only this original job ID",
       "  --batch-size N        Maximum job records in memory (default: 1000)",
       "  --replicates N        Replicates per setting (default: 1)",
@@ -97,13 +102,14 @@ parse_args <- function(args) {
     } else if (key == "--plan-only") {
       opts$plan_only <- TRUE
       i <- i + 1L
-    } else if (key %in% c("--reference", "--reference-mode", "--references", "--output", "--shard-index", "--shard-count",
-                          "--shard-unit", "--setting-batch", "--settings-per-batch", "--job-index",
+    } else if (key %in% c("--parameter-cache-dir", "--reference", "--reference-mode", "--references", "--output", "--shard-index", "--shard-count",
+                          "--shard-unit", "--setting-batch", "--settings-per-batch", "--job-index", "--job-start", "--job-end",
                           "--replicates", "--n-var", "--base-seed", "--dispersion-estimator",
                           "--de-mode", "--de-proportions", "--batch-size", "--underdispersion-model")) {
       if (i == length(args)) stop("Missing value for ", key)
       value <- args[i + 1L]
       name <- switch(key,
+        "--parameter-cache-dir" = "parameter_cache_dir",
         "--reference" = "reference", "--output" = "output",
         "--reference-mode" = "reference_mode", "--references" = "references",
         "--shard-index" = "shard_index", "--shard-count" = "shard_count",
@@ -113,10 +119,13 @@ parse_args <- function(args) {
         "--shard-unit" = "shard_unit",
         "--setting-batch" = "setting_batch", "--settings-per-batch" = "settings_per_batch",
         "--job-index" = "job_index",
+        "--job-start" = "job_start", "--job-end" = "job_end",
         "--replicates" = "replicates", "--n-var" = "n_var",
         "--base-seed" = "base_seed", "--dispersion-estimator" = "dispersion_estimator"
       )
-      opts[[name]] <- if (name == "references") {
+      opts[[name]] <- if (name %in% c("job_start", "job_end")) {
+        suppressWarnings(as.numeric(value))
+      } else if (name == "references") {
         trimws(strsplit(value, ",", fixed = TRUE)[[1]])
       } else if (name == "de_proportions") {
         suppressWarnings(as.numeric(trimws(strsplit(value, ",", fixed = TRUE)[[1]])))
@@ -160,13 +169,21 @@ parse_args <- function(args) {
       opts$setting_batch < 0 || opts$settings_per_batch < 1 || opts$job_index < 0)
     stop("Invalid setting batch or job index.")
   if (!opts$shard_unit %in% c("setting", "job")) stop("--shard-unit must be setting or job.")
+  if (!is.null(opts$job_start) || !is.null(opts$job_end)) {
+    bounds <- c(opts$job_start, opts$job_end)
+    if (length(bounds) != 2 || any(!is.finite(bounds)) ||
+        any(bounds != floor(bounds)) || bounds[1] < 1 || bounds[2] < bounds[1])
+      stop("Specify valid inclusive --job-start and --job-end integers.")
+    if (opts$shard_count != 1L || opts$setting_batch != 0L || opts$job_index != 0L)
+      stop("Job ranges cannot be combined with sharding, setting batches or --job-index.")
+  }
   opts
 }
 
 options <- parse_args(args)
 if (is.null(options)) quit(status = 0L)
 
-source("scripts/custom_simulation/factorial_design.R")
+source("scripts/simulation_design/factorial_design.R")
 
 resolve_path <- function(path) {
   is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)
@@ -204,7 +221,7 @@ shard_label <- sprintf("shard-%03d-of-%03d", options$shard_index, options$shard_
 shard_dir <- file.path(output_root, shard_label)
 
 scenarios <- build_scenarios(options$n_var, options$include_imbalance, options$underdispersion_model)
-source("scripts/custom_simulation/batch_jobs.R")
+source("scripts/simulation_design/batch_jobs.R")
 cat("Base combinations:", nrow(scenarios), "; DE mode:", options$de_mode, "\n")
 flush.console()
 iterator <- make_job_iterator(scenarios, options, reference_table)
@@ -243,7 +260,7 @@ if (options$underdispersion_model == "com_poisson" &&
     !requireNamespace("COMPoissonReg", quietly = TRUE)) {
   stop("Underdispersion requires COMPoissonReg. Install it with renv::install('COMPoissonReg').")
 }
-source("scripts/shared/simulate_custom.R")
+source("scripts/simulation_counts/load.R")
 
 dir.create(shard_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -280,7 +297,9 @@ get_reference_parameters <- function(reference_path, reference_hash) {
   if (exists(reference_hash, envir = parameter_cache, inherits = FALSE)) {
     return(get(reference_hash, envir = parameter_cache, inherits = FALSE))
   }
-  cache_path <- file.path(output_root, paste0("parameters-dispersion-v2-", reference_hash, ".rds"))
+  cache_root <- if (is.null(options$parameter_cache_dir)) output_root else resolve_path(options$parameter_cache_dir)
+  dir.create(cache_root, recursive=TRUE, showWarnings=FALSE)
+  cache_path <- file.path(cache_root, paste0("parameters-dispersion-v2-", reference_hash, ".rds"))
   parameters <- load_or_estimate_parameters(cache_path, reference_path, reference_hash)
   assign(reference_hash, parameters, envir = parameter_cache)
   parameters

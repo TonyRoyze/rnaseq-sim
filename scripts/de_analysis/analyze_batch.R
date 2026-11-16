@@ -8,22 +8,23 @@ if (!length(script_arg)) stop("Run this script with Rscript.")
 script_path <- normalizePath(sub("^--file=", "", script_arg[1]), mustWork = TRUE)
 project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork = TRUE)
 setwd(project_root)
-source("scripts/custom_simulation/pipeline_logging.R")
+source("scripts/shared/pipeline_logging.R")
 start_pipeline_log()
 
-source("scripts/custom_simulation/version.R")
+source("scripts/shared/version.R")
 
 parse_args <- function(args) {
   opts <- list(input = paste0("results/custom_simulation_v", simulation_version),
                output = "results/custom_simulation_analysis",
                shard_index = 1L, shard_count = 1L,
-               profile = "core", restore = TRUE, plan_only = FALSE)
+               profile = "core", methods = NULL, restore = TRUE, plan_only = FALSE)
   if ("--help" %in% args || "-h" %in% args) {
     cat(paste(
-      "Usage: Rscript scripts/custom_simulation/analyze_batch.R [options]",
+      "Usage: Rscript scripts/de_analysis/analyze_batch.R [options]",
       "Options:",
       "  --input PATH        Generated simulation directory",
       "  --output PATH       Analysis result directory",
+      "  --methods LIST      Comma-separated method names (default: all)",
       "  --profile NAME      core or quick (default: core)",
       "  --shard-index N     Worker shard, starting at 1",
       "  --shard-count N     Number of workers",
@@ -42,13 +43,15 @@ parse_args <- function(args) {
     } else if (key == "--plan-only") {
       opts$plan_only <- TRUE
       i <- i + 1L
-    } else if (key %in% c("--input", "--output", "--profile", "--shard-index", "--shard-count")) {
+    } else if (key %in% c("--input", "--output", "--profile", "--methods", "--shard-index", "--shard-count")) {
       if (i == length(args)) stop("Missing value for ", key)
       value <- args[i + 1L]
       name <- switch(key, "--input" = "input", "--output" = "output",
-                     "--profile" = "profile", "--shard-index" = "shard_index",
+                     "--profile" = "profile", "--methods" = "methods", "--shard-index" = "shard_index",
                      "--shard-count" = "shard_count")
-      opts[[name]] <- if (name %in% c("shard_index", "shard_count")) {
+      opts[[name]] <- if (name == "methods") {
+        trimws(strsplit(value, ",", fixed=TRUE)[[1]])
+      } else if (name %in% c("shard_index", "shard_count")) {
         suppressWarnings(as.integer(value))
       } else value
       i <- i + 2L
@@ -63,9 +66,12 @@ parse_args <- function(args) {
 
 options <- parse_args(commandArgs(trailingOnly = TRUE))
 if (is.null(options)) quit(status = 0L)
-source("renv/activate.R")
-if (options$restore) renv::restore(prompt = FALSE)
-source("scripts/custom_simulation/method_settings.R")
+source("scripts/de_analysis/method_settings.R")
+settings <- select_method_settings(make_method_settings(options$profile), options$methods)
+if (!options$plan_only) {
+  source("renv/activate.R")
+  if (options$restore) renv::restore(prompt = FALSE)
+}
 
 resolve_path <- function(path) {
   is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)
@@ -74,7 +80,7 @@ resolve_path <- function(path) {
 input_root <- resolve_path(options$input)
 output_root <- resolve_path(options$output)
 if (!dir.exists(input_root)) stop("Input directory not found: ", input_root)
-dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
+if (!options$plan_only) dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 
 input_files <- sort(list.files(
   input_root,
@@ -82,7 +88,6 @@ input_files <- sort(list.files(
   recursive = TRUE, full.names = TRUE
 ))
 if (!length(input_files)) stop("No generated simulation datasets found under: ", input_root)
-settings <- make_method_settings(options$profile)
 
 dataset_ids <- sub("\\.rds$", "", basename(input_files))
 extract_capture <- function(value, pattern, label, capture = 2L) {
@@ -203,8 +208,10 @@ for (i in seq_len(nrow(jobs))) {
   } else {
     jobs$status[i] <- "running"
     jobs$error[i] <- ""
+    job_started_at <- proc.time()[["elapsed"]]
     cat(sprintf("RUN [%d/%d] %s / %s / %s\n", i, nrow(jobs),
                 job$dataset_id, job$method, job$setting_id))
+    flush.console()
 
     run_error <- tryCatch({
       if (!identical(last_dataset, job$dataset_id)) {
@@ -250,13 +257,17 @@ for (i in seq_len(nrow(jobs))) {
       jobs$status[i] <- "failed"
       jobs$error[i] <- conditionMessage(run_error)
       analysis_counts["failed"] <- analysis_counts["failed"] + 1L
-      cat("ERROR ", job$method, "/", spec$setting_id, ": ",
-          conditionMessage(run_error), "\n", sep = "")
+      cat(sprintf("ERROR %s/%s | elapsed %.3f sec | %s\n",
+                  job$method, spec$setting_id,
+                  proc.time()[["elapsed"]] - job_started_at,
+                  conditionMessage(run_error)))
     } else {
       jobs$status[i] <- "complete"
       analysis_counts["complete"] <- analysis_counts["complete"] + 1L
-      cat("DONE ", basename(output_path), "\n", sep = "")
+      cat(sprintf("DONE %s | elapsed %.3f sec\n", basename(output_path),
+                  proc.time()[["elapsed"]] - job_started_at))
     }
+    flush.console()
   }
 
   completed_since_checkpoint <- completed_since_checkpoint + 1L

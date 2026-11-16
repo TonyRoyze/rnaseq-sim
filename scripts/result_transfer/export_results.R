@@ -3,11 +3,11 @@
 a <- commandArgs(FALSE)
 p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 setwd(normalizePath(file.path(dirname(p), '../..')))
-source('scripts/custom_simulation/version.R')
+source('scripts/shared/version.R')
 args <- commandArgs(TRUE)
 opts <- list(source=paste0('results/custom_simulation_pipeline_v',simulation_version), destination=NULL)
 if (!length(args) || '--help' %in% args) {
-  cat('Usage: Rscript scripts/custom_simulation/export_results.R --destination "E:/RNA-results" [--source PATH]\nCopies analysis RDS files, manifests, pipeline logs and batch/configuration metadata; excludes datasets.\n')
+  cat('Usage: Rscript scripts/result_transfer/export_results.R --destination "E:/RNA-results" [--source PATH]\nCopies analysis RDS files, manifests, pipeline logs and batch/configuration metadata; excludes datasets.\n')
   quit(status=0L)
 }
 if (length(args) %% 2L) stop('Each option requires a value.')

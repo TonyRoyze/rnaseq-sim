@@ -4,10 +4,10 @@ a <- commandArgs(FALSE)
 p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 project_root <- normalizePath(file.path(dirname(p), '../..'))
 setwd(project_root)
-source('scripts/custom_simulation/version.R')
-source('scripts/custom_simulation/check_paths.R')
-source('scripts/custom_simulation/factorial_design.R')
-source('scripts/custom_simulation/batch_jobs.R')
+source('scripts/shared/version.R')
+source('scripts/shared/check_paths.R')
+source('scripts/simulation_design/factorial_design.R')
+source('scripts/simulation_design/batch_jobs.R')
 argv <- commandArgs(TRUE)
 separator <- match('--', argv)
 if (is.na(separator)) stop('Usage: migrate_pipeline.R --source PATH [--destination PATH] [--apply] -- ORIGINAL_SIMULATION_OPTIONS')
@@ -28,7 +28,7 @@ if (is.null(source_root) || !dir.exists(source_root)) stop('--source must name a
 if (any(args %in% c('--output','--job-index','--setting-batch','--settings-per-batch','--plan-only','--help','--version')))
   stop('Pass the original experiment flags without output or selection options.')
 # Reuse the runner parser without executing its simulation or dependency setup.
-expressions <- parse('scripts/custom_simulation/run_batch.R')
+expressions <- parse('scripts/simulation_counts/run_batch.R')
 for (expr in expressions) {
   if (is.call(expr) && identical(expr[[1]], as.name('<-')) && identical(expr[[2]], as.name('parse_args'))) eval(expr)
 }

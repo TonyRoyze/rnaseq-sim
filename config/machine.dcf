@@ -1,0 +1,32 @@
+Job-Start: 1
+Job-End: 600
+Workers: 6
+Jobs-Per-Batch: 20
+Output: results/machine_run_001
+Stage: both
+Profile: core
+Replicates: 100
+N-Var: 10000
+Base-Seed: 20261024
+Reference-Mode: brca
+Reference: data/DGElist_BRCA.rds
+Dispersion-Estimator: method_of_moments
+Underdispersion-Model: generalized_poisson
+Include-Imbalance: true
+DE-Mode: fixed
+DE-Proportions: 0.1,0.2,0.3,0.4,0.5,0.6,0.75
+# Uncomment methods assigned to this machine. Keep indentation below Methods.
+# NBPSeq is enabled as an example; uncomment any other methods you want.
+Methods:
+    NBPSeq
+    # DESeq2
+    # DESeq
+    # edgeR.lrt
+    # edgeR.qlf
+    # DSS
+    # voom
+    # Wilcoxon
+    # T.test
+    # NOISeq
+    # ABSSeq
+    # ROTS

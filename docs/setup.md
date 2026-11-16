@@ -52,7 +52,7 @@ a small Git LFS pointer text file.
 From PowerShell in the repository folder, run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\automations/setup_windows.ps1
 ```
 
 The script checks that all tracked Git LFS objects are present and all tracked
@@ -64,7 +64,7 @@ uses WinGet to install `rig`, then installs R 4.3.3. If `rig list` shows the R
 version with an architecture suffix, pass that exact label, for example:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_windows.ps1 -RVersion 4.3-x86_64
+powershell -ExecutionPolicy Bypass -File .\automations/setup_windows.ps1 -RVersion 4.3-x86_64
 ```
 
 If setup reports that `sh.exe` is missing, install Rtools43, restart
@@ -93,7 +93,7 @@ Rscript.exe -e "source('renv/activate.R'); stopifnot(requireNamespace('edgeR', q
 ```
 
 If restore fails with `'sh' is not recognized`, install Rtools43, restart
-PowerShell, and rerun `setup_windows.ps1` (or the restore command). This means
+PowerShell, and rerun `automations/setup_windows.ps1` (or the restore command). This means
 R tried to install a package from source but could not find Rtools' shell. If
 restore later reports a compiler error, confirm that the matching Rtools43
 toolchain is installed. If restore reports that R is not 4.3.3, install/select
@@ -104,13 +104,13 @@ R 4.3.3 and run the commands again.
 Preview the jobs assigned to worker 1 of 4:
 
 ```powershell
-Rscript.exe scripts/custom_simulation/run_batch.R --plan-only --shard-index 1 --shard-count 4
+Rscript.exe scripts/simulation_counts/run_batch.R --plan-only --shard-index 1 --shard-count 4
 ```
 
 Then generate that shard's datasets:
 
 ```powershell
-Rscript.exe scripts/custom_simulation/run_batch.R --shard-index 1 --shard-count 4 --output "Z:/rnaseq-sim/results/custom_simulation"
+Rscript.exe scripts/simulation_counts/run_batch.R --shard-index 1 --shard-count 4 --output "Z:/rnaseq-sim/results/custom_simulation"
 ```
 
 Replace `Z:/rnaseq-sim/results/custom_simulation` with the lab's shared
@@ -125,7 +125,7 @@ quick single-dataset setup check, use one shard out of 40 and reduce the gene
 count:
 
 ```powershell
-Rscript.exe scripts/custom_simulation/run_batch.R --shard-index 1 --shard-count 40 --n-var 500 --output "Z:/rnaseq-sim/results/setup-check"
+Rscript.exe scripts/simulation_counts/run_batch.R --shard-index 1 --shard-count 40 --n-var 500 --output "Z:/rnaseq-sim/results/setup-check"
 ```
 
 Use that reduced run only to verify the installation. It is not a substitute
@@ -143,7 +143,7 @@ for the full benchmark settings.
   with enough free space; avoid synchronizing active result directories via
   consumer sync tools while multiple workers are writing.
 - For all runner options, setting definitions, and method analysis, see
-  [`scripts/custom_simulation/README.md`](scripts/custom_simulation/README.md).
+  [`docs/custom_simulation.md`](custom_simulation.md).
 
 ## Underdispersion generators
 
@@ -151,7 +151,7 @@ Generalized Poisson is the default (`--underdispersion-model generalized_poisson
 Its normalized finite-support sampler uses the base R `stats` package, requiring
 no extra package installation. The optional COM-Poisson generator is selected
 with `--underdispersion-model com_poisson`. `COMPoissonReg` 0.8.2 and its
-Rcpp/numDeriv dependencies are in `renv.lock`; `setup_windows.ps1` restores and
+Rcpp/numDeriv dependencies are in `renv.lock`; `automations/setup_windows.ps1` restores and
 checks the package. Manual setup on any platform:
 
 ```r

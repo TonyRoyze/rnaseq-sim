@@ -1,11 +1,11 @@
 # Run from the project root: Rscript --vanilla tests/full_factorial.R
 simulation_version <- '4.0'
-for (e in parse('scripts/custom_simulation/run_batch.R')) {
+for (e in parse('scripts/simulation_counts/run_batch.R')) {
   if (is.call(e) && identical(e[[1]], as.name('<-')) &&
       as.character(e[[2]])[1] %in% c('parse_args')) eval(e)
 }
-source('scripts/custom_simulation/factorial_design.R')
-source('scripts/custom_simulation/de_proportion_modes.R')
+source('scripts/simulation_design/factorial_design.R')
+source('scripts/simulation_design/de_proportion_modes.R')
 opts <- parse_args(character())
 stopifnot(opts$de_mode == 'fixed', opts$include_imbalance)
 stopifnot(!parse_args('--no-imbalance')$include_imbalance)
@@ -38,7 +38,7 @@ stopifnot(identical(y, assign_de_proportions(sc, 'setting', opts$de_proportions,
 z <- assign_de_proportions(sc, 'combination', opts$de_proportions, 42, 10000)
 stopifnot(nrow(z) == nrow(sc), length(unique(z$de_fraction)) == 7)
 for (module in c('helpers.R', 'prepare_design.R', 'generate_counts.R')) {
-  source(file.path('scripts/shared/custom_simulation', module))
+  source(file.path('scripts/simulation_counts', module))
 }
 p <- list(mean_total=rep(100,100),dispersion_mom_total=rep(.1,100),dispersion_edger_total=rep(.1,100))
 for (i in seq_len(nrow(splits))) {

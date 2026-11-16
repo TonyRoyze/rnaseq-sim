@@ -3,9 +3,9 @@
 a <- commandArgs(FALSE)
 p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 setwd(normalizePath(file.path(dirname(p), '../..')))
-source('scripts/custom_simulation/version.R')
-source('scripts/custom_simulation/check_paths.R')
-source('scripts/custom_simulation/pipeline_logging.R')
+source('scripts/shared/version.R')
+source('scripts/shared/check_paths.R')
+source('scripts/shared/pipeline_logging.R')
 args <- commandArgs(TRUE)
 if ('--version' %in% args) {
   cat('Custom simulation pipeline version', simulation_version, '\n')
@@ -39,7 +39,10 @@ pipeline_status('LOG', log_path)
 rscript <- file.path(R.home('bin'), 'Rscript')
 run <- function(script, args) {
   pipeline_status('PROCESS', basename(script))
+  started_at <- proc.time()[["elapsed"]]
   code <- system2(rscript, c(shQuote(script), shQuote(args)))
+  elapsed <- proc.time()[["elapsed"]] - started_at
+  pipeline_status('PROCESS COMPLETE', sprintf('%s | elapsed %.3f sec', basename(script), elapsed))
   if (code != 0L) stop('Stopped: ', script, '. Restart with the same options to resume.')
 }
 # Persist arguments so a resumed pipeline cannot silently change its experiment.
@@ -62,11 +65,11 @@ repeat {
   input <- file.path(batch, 'datasets')
   output <- file.path(batch, 'analysis')
   pipeline_status('GENERATE', 'Generate missing datasets; reuse existing datasets')
-  run('scripts/custom_simulation/run_batch.R', c(args, '--output', input,
+  run('scripts/simulation_counts/run_batch.R', c(args, '--output', input,
       '--setting-batch', as.character(index), '--settings-per-batch', '100'))
   datasets <- list.files(input, pattern='-rep[0-9]+-n[0-9]+-seed[0-9]+-ref[[:xdigit:]]{8}\\.rds$', recursive=TRUE, full.names=TRUE)
   # Use the planner's full number of settings to distinguish the end from errors.
-  source('scripts/custom_simulation/factorial_design.R')
+  source('scripts/simulation_design/factorial_design.R')
   nvar <- 10000L
   pos <- match('--n-var', args); if (!is.na(pos)) nvar <- as.integer(args[pos+1L])
   model <- 'generalized_poisson'
@@ -84,7 +87,7 @@ repeat {
     if (any(rows$status != 'complete')) stop('Simulation failures in batch ', index, '; keeping datasets for retry.')
   }
   pipeline_status('ANALYZE', paste(length(datasets), 'datasets; run missing method results'))
-  run('scripts/custom_simulation/analyze_batch.R', c('--input', input, '--output', output, '--no-restore'))
+  run('scripts/de_analysis/analyze_batch.R', c('--input', input, '--output', output, '--no-restore'))
   manifests <- list.files(output, pattern='^manifest.csv$', recursive=TRUE, full.names=TRUE)
   if (!length(manifests) || any(vapply(manifests, function(path) any(read.csv(path)$status != 'complete'), logical(1))))
     stop('Analysis incomplete in batch ', index, '; keeping datasets for retry.')

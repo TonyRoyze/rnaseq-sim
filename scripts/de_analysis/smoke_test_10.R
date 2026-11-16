@@ -20,7 +20,7 @@ parse_args <- function(args) {
   )
   if ("--help" %in% args || "-h" %in% args) {
     cat(paste(
-      "Usage: Rscript scripts/custom_simulation/smoke_test_10.R [options]",
+      "Usage: Rscript scripts/de_analysis/smoke_test_10.R [options]",
       "  --reference PATH   Two-group edgeR DGEList RDS (default: E-ENAD-34)",
       "  --output PATH      Test output directory",
       "  --n-var N          Genes per dataset (default: 500)",
@@ -57,8 +57,8 @@ config <- parse_args(commandArgs(trailingOnly = TRUE))
 if (is.null(config)) quit(status = 0L)
 source("renv/activate.R")
 if (config$restore) renv::restore(prompt = FALSE)
-source("scripts/shared/simulate_custom.R")
-source("scripts/custom_simulation/method_settings.R")
+source("scripts/simulation_counts/load.R")
+source("scripts/de_analysis/method_settings.R")
 
 resolve_path <- function(path) {
   is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)

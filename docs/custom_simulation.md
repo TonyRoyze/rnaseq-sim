@@ -8,8 +8,8 @@ can resume.
 Run from the project root:
 
 ```sh
-Rscript scripts/custom_simulation/run_batch.R --plan-only
-Rscript scripts/custom_simulation/run_batch.R
+Rscript scripts/simulation_counts/run_batch.R --plan-only
+Rscript scripts/simulation_counts/run_batch.R
 ```
 
 The default reference mode uses `data/DGElist_BRCA.rds`, and outputs go to
@@ -29,9 +29,9 @@ external test set and the runner rejects it as a simulation reference. Override
 the eligible reference list with comma-separated paths:
 
 ```sh
-Rscript scripts/custom_simulation/run_batch.R --reference-mode all
-Rscript scripts/custom_simulation/run_batch.R --reference-mode random --replicates 5
-Rscript scripts/custom_simulation/run_batch.R --reference-mode all \
+Rscript scripts/simulation_counts/run_batch.R --reference-mode all
+Rscript scripts/simulation_counts/run_batch.R --reference-mode random --replicates 5
+Rscript scripts/simulation_counts/run_batch.R --reference-mode all \
   --references data/DGElist_BRCA.rds,data/DGElist_LUSC.rds
 ```
 
@@ -111,8 +111,8 @@ expand the full experiment. Startup and each processing batch print progress.
 Ask for a plan before computing. For example, split the jobs over four workers:
 
 ```sh
-Rscript scripts/custom_simulation/run_batch.R --plan-only --shard-index 1 --shard-count 4
-Rscript scripts/custom_simulation/run_batch.R --shard-index 1 --shard-count 4
+Rscript scripts/simulation_counts/run_batch.R --plan-only --shard-index 1 --shard-count 4
+Rscript scripts/simulation_counts/run_batch.R --shard-index 1 --shard-count 4
 ```
 
 On other workers, use the same project version, reference RDS, `--n-var`,
@@ -132,11 +132,11 @@ independent datasets per setting. `--no-restore` skips the automatic
 
 ```sh
 # Preview worker 1 of 4, without generating datasets
-Rscript scripts/custom_simulation/run_batch.R \
+Rscript scripts/simulation_counts/run_batch.R \
   --replicates 100 --shard-count 4 --shard-index 1 --plan-only
 
 # Run worker 1; launch workers 2, 3, and 4 separately
-Rscript scripts/custom_simulation/run_batch.R \
+Rscript scripts/simulation_counts/run_batch.R \
   --replicates 100 --shard-count 4 --shard-index 1 --batch-size 1000
 ```
 
@@ -157,7 +157,7 @@ uses its separate analysis manifest; simulation datasets remain compatible.
 To check that all 12 methods run on a small spread of simulated data, use:
 
 ```sh
-Rscript scripts/custom_simulation/smoke_test_10.R
+Rscript scripts/de_analysis/smoke_test_10.R
 ```
 
 The script creates five negative-binomial and five Poisson datasets, runs every
@@ -175,8 +175,8 @@ baseline with one-factor-at-a-time settings, avoiding the enormous Cartesian
 product of all method options.
 
 ```sh
-Rscript scripts/custom_simulation/analyze_batch.R --plan-only --shard-count 8
-Rscript scripts/custom_simulation/analyze_batch.R --shard-index 1 --shard-count 8
+Rscript scripts/de_analysis/analyze_batch.R --plan-only --shard-count 8
+Rscript scripts/de_analysis/analyze_batch.R --shard-index 1 --shard-count 8
 ```
 
 Run the second command on each worker with a distinct index from 1 to 8. Use
@@ -194,8 +194,10 @@ The core profile covers these options where supported:
 - **DESeq:** dispersion fit type (`local`, `parametric`).
 - **edgeR LRT/QLF:** TMM, TMMwsp, RLE, upper-quartile, or no composition
   normalization; robust dispersion estimation.
-- **DSS:** log-ratio, quantile, total-count, or median normalization; mean
-  versus abundance-trended dispersion; equal versus separate group variance.
+- **DSS:** log-ratio, quantile, total-count, or median normalization and equal
+  versus separate group variance. The abundance-trended dispersion setting is
+  omitted because it repeatedly failed with `missing values not allowed`;
+  active DSS settings use `dispersion_trend = FALSE`.
 - **voom:** edgeR normalization methods, quantile versus no between-array
   normalization, robust empirical Bayes, and an intensity trend.
 - **Wilcoxon / t-test:** normalization, log-CPM prior count, exact versus
@@ -209,15 +211,9 @@ The core profile covers these options where supported:
 - **ROTS:** TMM versus no composition adjustment, bootstrap count, and top-list
   size.
 
-DSS 2.48.0's abundance-trend fitter fails with `missing values not allowed`
-when expression bins are empty. The DSS adapter omits non-finite bin medians
-before isotonic regression and fits the spline at the retained expression-bin
-coordinates. This repair also applies to DSS's internal simulated trend fits;
-it keeps `trend=TRUE` and does not modify the installed package. Fewer than four
-finite bins remain an explicit failure. Validate with `Rscript tests/dss_trend.R`.
 Rerun the same analysis/pipeline command to retry failed jobs; existing result
-files are skipped. Remove selected existing DSS trend result files first only
-if you want to recompute successful trend fits with this adapter too.
+files are skipped. Existing results from the omitted DSS trend setting remain
+on disk but are not scheduled by new analysis plans.
 
 Each saved result includes the method settings, gene-level scores, BH adjusted
 scores, known DE labels, AUC, true-positive rate, observed FDR, and simulation
@@ -301,10 +297,10 @@ scenario metadata. Existing output datasets are left untouched; use a fresh
 
 ```sh
 # Optional: one DE proportion shared across sample-size levels
-Rscript scripts/custom_simulation/run_batch.R --de-mode 2 --replicates 3
+Rscript scripts/simulation_counts/run_batch.R --de-mode 2 --replicates 3
 
 # Entire suite at every requested DE proportion, with three repetitions
-Rscript scripts/custom_simulation/run_batch.R --de-mode 3 --replicates 3
+Rscript scripts/simulation_counts/run_batch.R --de-mode 3 --replicates 3
 ```
 
 ## Simulation version
@@ -316,7 +312,7 @@ Each generated dataset RDS and each manifest row record `simulation_version`.
 Existing datasets are not moved or relabeled.
 
 ```sh
-Rscript scripts/custom_simulation/run_batch.R --version
+Rscript scripts/simulation_counts/run_batch.R --version
 ```
 
 ## Verify simulation output
@@ -327,7 +323,7 @@ path across the shard folders, and exits nonzero if datasets are missing. The
 check does not require `edgeR` or restore the R environment.
 
 ```sh
-Rscript scripts/custom_simulation/check_batch.R \\
+Rscript scripts/simulation_counts/check_batch.R \\
   --replicates 100 --shard-count 4
 ```
 
@@ -379,16 +375,16 @@ failed calibration raise errors. Support above one million points is rejected
 explicitly to bound numerical work. A zero mean produces zero counts.
 
 ```sh
-Rscript scripts/custom_simulation/run_batch.R --replicates 100 \
+Rscript scripts/simulation_counts/run_batch.R --replicates 100 \
   --shard-count 4 --shard-index 1 --underdispersion-model generalized_poisson
 
-Rscript scripts/custom_simulation/run_batch.R --plan-only \
+Rscript scripts/simulation_counts/run_batch.R --plan-only \
   --underdispersion-model com_poisson
 ```
 
 ## Process 100 settings at a time
 
-Run `Rscript scripts/custom_simulation/run_pipeline.R --replicates 100`.
+Run `Rscript scripts/simulation_pipeline/run_pipeline.R --replicates 100`.
 The pipeline generates all replicates for 100 settings, runs the core method
 analysis, retains per-replicate metrics and reproducibility metadata, and
 removes simulated datasets after successful analysis. Gene-level analysis
@@ -416,7 +412,7 @@ reference files, parameter caches, renv.lock and the simulator code version.
 For the random-reference, edgeR-dispersion experiment on five workers:
 
 ```sh
-Rscript scripts/custom_simulation/run_pipeline.R \
+Rscript scripts/simulation_pipeline/run_pipeline.R \
   --replicates 100 --reference-mode random \
   --shard-count 5 --shard-index 1 \
   --dispersion-estimator edgeR --no-restore
@@ -439,7 +435,7 @@ Stop all generation and pipeline workers first. Preview the migration using
 exactly the experiment flags used to generate the datasets:
 
 ```sh
-Rscript scripts/custom_simulation/migrate_pipeline.R \
+Rscript scripts/simulation_pipeline/migrate_pipeline.R \
   --source results/custom_simulation_pipeline_v5.1 -- \
   --replicates 100 --reference-mode random --shard-count 5 --shard-index 3 \
   --dispersion-estimator edgeR --no-restore
@@ -463,7 +459,7 @@ place; fresh batch status logs are written when the pipeline resumes.
 In PowerShell, replace `E:` with your portable disk drive letter:
 
 ```powershell
-Rscript scripts/custom_simulation/export_results.R --destination "E:/RNA-results"
+Rscript scripts/result_transfer/export_results.R --destination "E:/RNA-results"
 ```
 
 The source defaults to `results/custom_simulation_pipeline_v5.1`. Override with

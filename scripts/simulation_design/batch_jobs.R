@@ -30,8 +30,9 @@ make_job_iterator <- function(scenarios, opts, references) {
   # Assign complete settings, then expand their replicates lazily. Selection
   # happens here so each pipeline batch does not scan the full experiment.
   setting_order <- NULL
-  if (identical(opts$shard_unit, 'setting') || isTRUE(opts$setting_batch > 0L) ||
-      isTRUE(opts$job_index > 0L)) {
+  range_mode <- !is.null(opts$job_start) && !is.null(opts$job_end)
+  if (!range_mode && (identical(opts$shard_unit, 'setting') || isTRUE(opts$setting_batch > 0L) ||
+      isTRUE(opts$job_index > 0L))) {
     setting_order <- unlist(lapply(base_groups, function(base) {
       unlist(lapply(seq_len(n_de) - 1L, function(de) de * n_base + base), use.names=FALSE)
     }), use.names=FALSE)
@@ -50,6 +51,11 @@ make_job_iterator <- function(scenarios, opts, references) {
       setting_order <- setting_order[setting_order == wanted]
       n_assigned <- as.double(length(setting_order) > 0)
     }
+  }
+
+  if (range_mode) {
+    if (opts$job_end > n_total) stop('Job range exceeds the experiment size.')
+    n_assigned <- opts$job_end - opts$job_start + 1
   }
 
   # Store one RNG checkpoint per base scenario/setting, never per replicate.
@@ -126,6 +132,16 @@ make_job_iterator <- function(scenarios, opts, references) {
       }
       setting_job_index <- de_index * n_base * n_rep + (as.double(base) - 1) * n_rep + replicate
       job_index <- (setting_job_index - 1) * n_ref + reference_index
+    }
+    if (range_mode) {
+      # Decode original IDs directly: no scan or expansion of preceding jobs.
+      job_index <- opts$job_start + cursor + seq_len(count) - 1
+      setting_job_index <- floor((job_index - 1) / n_ref) + 1
+      reference_index <- as.integer((job_index - 1) %% n_ref + 1)
+      replicate <- as.integer((setting_job_index - 1) %% n_rep + 1)
+      setting <- floor((setting_job_index - 1) / n_rep)
+      de_index <- floor(setting / n_base)
+      base <- as.integer(setting %% n_base + 1)
     }
     job <- scenarios[base, , drop = FALSE]
     job$replicate <- replicate

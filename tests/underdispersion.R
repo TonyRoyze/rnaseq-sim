@@ -1,8 +1,8 @@
 source('renv/activate.R')
-source('scripts/shared/simulate_custom.R')
-source('scripts/custom_simulation/factorial_design.R')
+source('scripts/simulation_counts/load.R')
+source('scripts/simulation_design/factorial_design.R')
 simulation_version <- '4.0'
-for (e in parse('scripts/custom_simulation/run_batch.R')) {
+for (e in parse('scripts/simulation_counts/run_batch.R')) {
  if (is.call(e) && identical(e[[1]], as.name('<-')) && identical(e[[2]], as.name('parse_args'))) eval(e)
 }
 stopifnot(parse_args(character())$underdispersion_model == 'generalized_poisson')

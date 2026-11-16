@@ -4,7 +4,7 @@ The simulator is split into small files so each stage can be read on its own.
 Load them through the public entry point from the project root:
 
 ```r
-source("scripts/shared/simulate_custom.R")
+source("scripts/simulation_counts/load.R")
 ```
 
 That entry point links the modules in this directory and makes two functions
@@ -30,7 +30,7 @@ available:
 ## Example
 
 ```r
-source("scripts/shared/simulate_custom.R")
+source("scripts/simulation_counts/load.R")
 params <- estimate_simulation_parameters(real_dge)
 
 sim <- simulate_custom_counts(
