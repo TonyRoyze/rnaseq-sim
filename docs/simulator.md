@@ -29,6 +29,15 @@ available:
 
 ## Example
 
+Version 5.3 caps sampled baseline gene means at 180,000 for every count model,
+before fold-change, library-size, and batch multipliers. Reference data and
+cached parameter estimates retain their original values. `sim$truth` records
+`baseline_mean_original`, `baseline_mean`, and `baseline_mean_capped` for each
+sampled gene; `sim$parameters$baseline_mean_cap` records the threshold.
+Final expected means and realized counts can exceed this baseline cap.
+Use separate outputs from uncapped runs; do not combine capped and uncapped
+results as the same simulation design.
+
 ```r
 source("scripts/simulation_counts/load.R")
 params <- estimate_simulation_parameters(real_dge)

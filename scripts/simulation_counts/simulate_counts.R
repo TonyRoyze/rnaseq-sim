@@ -73,6 +73,9 @@ simulate_custom_counts <- function(
   truth <- data.frame(
     gene = rownames(counts),
     source_gene = (params$gene_id %||% seq_along(params$mean_total))[design$source_index],
+    baseline_mean_original = design$baseline_mean_original,
+    baseline_mean = design$baseline_mean,
+    baseline_mean_capped = design$baseline_mean_capped,
     is_de = design$direction != "none",
     direction = design$direction,
     fold_change_group2_vs_group1 = design$fold_change,
@@ -95,6 +98,7 @@ simulate_custom_counts <- function(
     parameters = list(
       s = design$s, group_sizes = design$group_sizes, n_samples = design$n_samples,
       n_var = design$n_var, n_diffexp = design$n_diffexp,
+      baseline_mean_cap = design$baseline_mean_cap,
       count_model = count_model, variance_mean_ratio = if (count_model %in% c("com_poisson", "generalized_poisson")) variance_mean_ratio else if (count_model == "poisson") 1 else NA_real_,
       dispersion = design$dispersion,
       dispersion_scale = dispersion_scale, dispersion_source = dispersion_source,

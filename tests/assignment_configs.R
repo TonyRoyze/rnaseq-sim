@@ -22,6 +22,7 @@ scientific_fields <- setdiff(names(configs[[1]]),
                             c('Job-Start', 'Job-End', 'Output', 'Methods'))
 outputs <- vapply(configs, `[[`, character(1), 'Output')
 stopifnot(!anyDuplicated(outputs))
+stopifnot(all(startsWith(outputs, paste0('results/assignments_100_v', simulation_version, '/'))))
 opts <- parse_args(machine_simulation_args(configs[[1]]))
 total <- nrow(build_scenarios(opts$n_var, opts$include_imbalance,
                              opts$underdispersion_model)) * opts$replicates *

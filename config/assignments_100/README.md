@@ -6,6 +6,11 @@ one DE method with all its requested core normalization variants. It keeps
 among the same four reference files. Each method covers dataset IDs 1–136080
 exactly once. Different methods deliberately regenerate the same datasets.
 
+Version 5.3 caps simulation baseline means at 180,000 and writes these
+assignments under `results/assignments_100_v5.3/`. Update both the scripts and
+configs on each machine. Keep earlier uncapped outputs separate; they are a
+different simulation design and must not be resumed or merged into these runs.
+
 The 27/27/10 assignments for NBPSeq/DESeq2/DESeq plus 36 assignments divided
 equally among the other nine methods extend the provisional 8/8/3/11 physical
 machine plan. This allocation is not a measured throughput optimum; job counts
@@ -211,3 +216,27 @@ not dataset IDs or physical machine IDs.
 | [098](config-098.dcf) | ROTS | 34021 | 68040 | | Unassigned |
 | [099](config-099.dcf) | ROTS | 68041 | 102060 | | Unassigned |
 | [100](config-100.dcf) | ROTS | 102061 | 136080 | | Unassigned |
+
+## Read-only progress monitor
+
+From the project directory in PowerShell:
+
+```powershell
+# One snapshot
+powershell -ExecutionPolicy Bypass -File .\automations\progress.ps1 --config config/assignments_100/config-007.dcf
+# Live refresh every 15 seconds; Ctrl+C stops only the monitor
+powershell -ExecutionPolicy Bypass -File .\automations\progress.ps1 --config config/assignments_100/config-007.dcf --live --interval 15
+# Inspect earlier output instead of the config's current output directory
+powershell -ExecutionPolicy Bypass -File .\automations\progress.ps1 --output results/assignments_100_v5.2/config-007-NBPSeq
+```
+
+Use `config-008.dcf` for assignment 8. macOS/Linux can invoke
+`Rscript --vanilla scripts/simulation_pipeline/progress.R` with the same arguments.
+The monitor needs Rscript on PATH, but no R packages or restored renv environment.
+It shows finished datasets from whole-batch markers, latest generation statuses
+(deduplicating retries), analysis method/setting statuses, and the latest log
+line per worker. Analysis counts lag until manifests are checkpointed; the latest
+log line provides activity between checkpoints. A recent log does not confirm
+that the process is still alive. Failure counts describe the latest recorded
+status, not historical failures. Unreadable status files are reported and
+retried at the next refresh. Files and running workers are never changed.

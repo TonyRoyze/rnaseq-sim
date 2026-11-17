@@ -41,7 +41,13 @@ prepare_simulation_design <- function(
   }
 
   source_index <- sample.int(n_source, n_var)
-  baseline_mean <- pmax(as.numeric(params$mean_total[source_index]), 0)
+  baseline_mean_original <- as.numeric(params$mean_total[source_index])
+  if (any(!is.finite(baseline_mean_original))) {
+    stop("Estimated means must be finite.")
+  }
+  baseline_mean_cap <- 180000
+  baseline_mean_capped <- baseline_mean_original > baseline_mean_cap
+  baseline_mean <- pmin(pmax(baseline_mean_original, 0), baseline_mean_cap)
   dispersion_field <- function(group) {
     modern <- paste0("dispersion_", estimator_prefix, "_", group)
     legacy <- paste0("dispersion_", group)
@@ -128,6 +134,8 @@ prepare_simulation_design <- function(
     group_sizes = group_sizes, n_var = n_var, n_diffexp = n_diffexp,
     n_samples = n_samples, condition = condition,
     source_index = source_index, baseline_mean = baseline_mean,
+    baseline_mean_original = baseline_mean_original,
+    baseline_mean_capped = baseline_mean_capped, baseline_mean_cap = baseline_mean_cap,
     dispersion = dispersion_used, dispersion_unscaled = dispersion_unscaled,
     dispersion_mom = dispersion_mom, dispersion_edger = dispersion_edger,
     library_size_factors = library_size_factors,
