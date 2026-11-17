@@ -74,6 +74,10 @@ existing Output folder; saved results are reused. Preserve each completed
 output folder when starting the next assignment. To move an interrupted
 assignment, stop its old workers and transfer its entire Output folder to
 the replacement computer, or explicitly choose to recompute it.
+Use the preview-first, checksum-verified
+[assignment migration tool](../../scripts/result_transfer/README.md) with
+`--include-datasets` for a full resume transfer. Its default copies only results,
+status and logs for collection.
 Do not change job bounds, methods, seeds, scientific settings or Output after
 starting a config. Workers can be reduced before first use on a low-RAM machine;
 changing a saved configuration is rejected by the resume snapshot.

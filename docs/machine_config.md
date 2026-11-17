@@ -198,3 +198,9 @@ settings identical across method pools so reference draws agree.
 100 ready-to-run configs, the method-pool allocation, initial assignments for
 30 machines and a manual assignment register. Pass `--config` explicitly;
 the default machine config does not automatically select these files.
+
+To transfer a stopped assignment to another computer and resume it, use
+[scripts/result_transfer/migrate_assignment.R](../scripts/result_transfer/README.md).
+Preview is the default; `--apply` copies and verifies results, status, logs and
+configuration while preserving the source. Generated datasets are excluded by
+default. Add `--include-datasets` only for a full transfer to resume elsewhere.
