@@ -4,7 +4,7 @@ Job-Start: 1
 Job-End: 34020
 Workers: 6
 Jobs-Per-Batch: 20
-Output: results/assignments_100_v5.3/config-097-ROTS
+Output: results/assignments_100_v5/config-097-ROTS
 Stage: both
 Profile: core
 Replicates: 30

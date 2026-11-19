@@ -4,7 +4,7 @@ Job-Start: 20161
 Job-End: 25200
 Workers: 6
 Jobs-Per-Batch: 20
-Output: results/assignments_100_v5.3/config-032-DESeq2
+Output: results/assignments_100_v5/config-032-DESeq2
 Stage: both
 Profile: core
 Replicates: 30

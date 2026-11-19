@@ -4,7 +4,7 @@ Job-Start: 34021
 Job-End: 68040
 Workers: 6
 Jobs-Per-Batch: 20
-Output: results/assignments_100_v5.3/config-094-ABSSeq
+Output: results/assignments_100_v5/config-094-ABSSeq
 Stage: both
 Profile: core
 Replicates: 30

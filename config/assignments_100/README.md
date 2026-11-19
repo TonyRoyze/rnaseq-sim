@@ -6,10 +6,35 @@ one DE method with all its requested core normalization variants. It keeps
 among the same four reference files. Each method covers dataset IDs 1–136080
 exactly once. Different methods deliberately regenerate the same datasets.
 
-Version 5.3 caps simulation baseline means at 180,000 and writes these
-assignments under `results/assignments_100_v5.3/`. Update both the scripts and
-configs on each machine. Keep earlier uncapped outputs separate; they are a
-different simulation design and must not be resumed or merged into these runs.
+The assignment output folder is stable: `results/assignments_100_v5/`.
+Simulation format versions remain in saved data for provenance. Existing v5.2
+and v5.3 assignments can be moved into this folder and resumed with the same
+scientific config. The original `machine_options.rds` is preserved and each
+launch is recorded in `resume_history.rds`. Changed seeds, ranges, methods, or
+other config fields still fail validation; only the output path may change.
+
+Stop all workers before renaming an existing output folder in PowerShell:
+
+```powershell
+# Only if assignments_100_v5 does not already exist:
+Rename-Item .\results\assignments_100_v5.2 -NewName assignments_100_v5
+```
+
+Use `assignments_100_v5.3` as the source if that is the folder you have. Do not
+rename both to the same destination or merge overlapping assignments blindly.
+The scripts do not rename folders automatically. After the rename, use the
+same config to resume. Completed batches are skipped after checking their
+markers, manifests, and result-file presence. Missing completed result files
+stop the run so they can be restored rather than silently regenerated.
+Incomplete batches reuse generated datasets and existing analysis files and
+retry missing/failed work.
+
+Version 5.3 caps newly generated baseline means at 180,000. Retained v5.2
+datasets/results remain uncapped. Resuming them is explicitly allowed to
+preserve work, but creates a mixed-design assignment: compare/report the
+versions separately rather than treating all outputs as capped simulations.
+The assignment runner retains datasets and analysis results; it has no cleanup
+step. The separate `run_pipeline.R` runner does remove datasets after analysis.
 
 The 27/27/10 assignments for NBPSeq/DESeq2/DESeq plus 36 assignments divided
 equally among the other nine methods extend the provisional 8/8/3/11 physical

@@ -4,7 +4,7 @@ Job-Start: 25201
 Job-End: 30240
 Workers: 6
 Jobs-Per-Batch: 20
-Output: results/assignments_100_v5.3/config-006-NBPSeq
+Output: results/assignments_100_v5/config-006-NBPSeq
 Stage: both
 Profile: core
 Replicates: 30

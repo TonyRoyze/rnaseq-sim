@@ -5,6 +5,7 @@ p <- normalizePath(sub('^--file=', '', grep('^--file=',a,value=TRUE)[1]))
 setwd(normalizePath(file.path(dirname(p),'../..')))
 source('scripts/simulation_pipeline/machine_config.R')
 source('scripts/shared/version.R')
+source('scripts/simulation_pipeline/resume.R')
 args <- commandArgs(TRUE)
 if (any(args %in% c('--help','-h'))) {
   cat('Usage: Rscript scripts/simulation_pipeline/run_machine.R [--config config/machine.dcf] [--plan-only]\n')
@@ -46,14 +47,28 @@ dir.create(root,recursive=TRUE,showWarnings=FALSE)
 if(!dir.exists(root)) stop('Cannot create output directory.')
 snapshot <- list(version=simulation_version,config=cfg)
 state <- file.path(root,'machine_options.rds')
-if(file.exists(state) && !identical(readRDS(state),snapshot))
-  stop('Config differs from existing output. Use a new Output directory for a different range or experiment.')
+legacy_resume <- FALSE
+if(file.exists(state)) legacy_resume <- check_assignment_resume(readRDS(state), cfg, simulation_version)
 if(!file.exists(state)) saveRDS(snapshot,state)
 # Prevent two launchers from writing the same machine output concurrently.
 lock <- file.path(root,'.machine-running')
 if(!dir.create(lock,showWarnings=FALSE)) stop('Output is locked by another launcher. After a crash, verify all workers stopped before removing ',lock)
+if (legacy_resume) {
+  cat('RESUME: preserving uncapped v5.2 results; newly generated datasets use the v5.3 baseline cap.\n')
+}
+tryCatch({
+  history_path <- file.path(root, 'resume_history.rds')
+  history <- if (file.exists(history_path)) readRDS(history_path) else list()
+  history[[length(history)+1L]] <- list(at=Sys.time(), version=simulation_version,
+    config=cfg, original=readRDS(state), legacy_resume=legacy_resume)
+  saveRDS(history, history_path)
+}, error=function(e) {
+  unlink(lock, recursive=TRUE)
+  stop(e)
+})
 worker_main <- function(row,cfg,simulation_args,root,project_root) {
   setwd(project_root)
+  source('scripts/simulation_pipeline/resume.R', local=TRUE)
   options(mc.cores=1L)
   rscript <- file.path(R.home('bin'),'Rscript')
   run <- function(script,args,log) {
@@ -67,6 +82,11 @@ worker_main <- function(row,cfg,simulation_args,root,project_root) {
     while(start<=row$end) {
       end <- min(start+cfg[['Jobs-Per-Batch']]-1,row$end)
       batch <- file.path(worker_root,sprintf('jobs-%.0f-%.0f',start,end))
+      if (assignment_batch_complete(batch, start, end, cfg$Stage)) {
+        cat('SKIP completed batch:', batch, '\n')
+        start <- end+1
+        next
+      }
       dir.create(batch,recursive=TRUE,showWarnings=FALSE)
       input <- file.path(batch,'datasets'); output <- file.path(batch,'analysis')
       run('scripts/simulation_counts/run_batch.R',c(simulation_args,'--parameter-cache-dir',file.path(root,'parameters'),'--output',input,
