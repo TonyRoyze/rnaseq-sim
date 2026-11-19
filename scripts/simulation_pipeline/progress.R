@@ -19,7 +19,7 @@ progress_counts <- function(rows) {
     failed = sum(status == 'failed', na.rm = TRUE),
     running = sum(status == 'running', na.rm = TRUE))
 }
-progress_snapshot <- function(root) {
+progress_snapshot <- function(root, worker_plan = NULL, jobs_per_batch = NA_real_) {
   workers <- list.dirs(root, recursive = FALSE, full.names = TRUE)
   workers <- workers[grepl('^worker-[0-9]+$', basename(workers))]
   lapply(workers, function(worker) {
@@ -42,18 +42,25 @@ progress_snapshot <- function(root) {
       latest <- paste(basename(dirname(log)), basename(log),
                       if (length(lines)) tail(lines, 1) else '(empty)', sep = ' | ')
     }
+    worker_number <- as.integer(sub('^worker-', '', basename(worker)))
+    planned_jobs <- if (is.null(worker_plan)) NA_real_ else worker_plan$end[worker_number] -
+      worker_plan$start[worker_number] + 1
+    planned_batches <- if (is.finite(planned_jobs) && is.finite(jobs_per_batch))
+      ceiling(planned_jobs / jobs_per_batch) else NA_real_
     list(worker = basename(worker), finished = sum(sizes[complete]),
-         batches = sum(complete), generation = progress_counts(generation),
+         batches = sum(complete), planned_jobs = planned_jobs,
+         planned_batches = planned_batches, generation = progress_counts(generation),
          analysis = progress_counts(analysis), latest = latest,
          unreadable = sum(vapply(c(generation, analysis), is.null, logical(1))))
   })
 }
-show_progress <- function(root, expected = NA_real_) {
+show_progress <- function(root, expected = NA_real_, worker_plan = NULL,
+                           jobs_per_batch = NA_real_) {
   cat('\n', format(Sys.time(), '%Y-%m-%d %H:%M:%S %z'), '\n', root, '\n', sep = '')
   if (!dir.exists(root)) {
     cat('Output directory does not exist yet.\n'); return(invisible(NULL))
   }
-  snapshot <- progress_snapshot(root)
+  snapshot <- progress_snapshot(root, worker_plan, jobs_per_batch)
   total <- sum(vapply(snapshot, function(x) x$finished, numeric(1)))
   if (is.finite(expected)) {
     cat(sprintf('Finished datasets (whole batches): %.0f / %.0f (%.1f%%)\n',
@@ -61,10 +68,12 @@ show_progress <- function(root, expected = NA_real_) {
     cat(sprintf('Remaining datasets (including partial batches): %.0f\n', max(0, expected - total)))
   } else cat(sprintf('Finished datasets (whole batches): %.0f\n', total))
   if (!length(snapshot)) cat('No worker folders found yet.\n')
-  cat('Worker       Finished  Batches  Generated  GenFail  AnalysisOK  AnalysisFail\n')
+  cat('Worker       Datasets done/planned  Batches done/planned  Generated  GenFail  AnalysisOK  AnalysisFail\n')
   for (x in snapshot) {
-    cat(sprintf('%-12s %8.0f %8d %10d %8d %11d %13d\n',
-      x$worker, x$finished, x$batches, x$generation['complete'],
+    dataset_count <- if (is.finite(x$planned_jobs)) sprintf('%.0f/%.0f', x$finished, x$planned_jobs) else sprintf('%.0f', x$finished)
+    batch_count <- if (is.finite(x$planned_batches)) sprintf('%.0f/%.0f', x$batches, x$planned_batches) else sprintf('%d', x$batches)
+    cat(sprintf('%-12s %21s %20s %10d %8d %11d %13d\n',
+      x$worker, dataset_count, batch_count, x$generation['complete'],
       x$generation['failed'], x$analysis['complete'], x$analysis['failed']))
     if (nzchar(x$latest)) cat('  Latest: ', x$latest, '\n', sep = '')
     if (x$unreadable) cat('  Note: ', x$unreadable, ' unreadable/incomplete status files; retry next refresh.\n', sep = '')
@@ -102,10 +111,17 @@ progress_main <- function(args = commandArgs(TRUE)) {
     cfg <- tryCatch(read.dcf(con), finally = close(con))
     output <- cfg[1, 'Output']
     expected <- as.numeric(cfg[1, 'Job-End']) - as.numeric(cfg[1, 'Job-Start']) + 1
+    source('scripts/simulation_pipeline/machine_config.R')
+    config <- as.list(cfg[1, ])
+    config$Workers <- as.numeric(config$Workers)
+    config[['Job-Start']] <- as.numeric(config[['Job-Start']])
+    config[['Job-End']] <- as.numeric(config[['Job-End']])
+    worker_plan <- machine_worker_ranges(config)
+    jobs_per_batch <- as.numeric(cfg[1, 'Jobs-Per-Batch'])
   }
   output <- normalizePath(output, winslash = '/', mustWork = FALSE)
   repeat {
-    show_progress(output, expected)
+    show_progress(output, expected, worker_plan, jobs_per_batch)
     if (!live) break
     cat(sprintf('Refreshing in %g seconds; Ctrl+C to stop.\n', interval))
     Sys.sleep(interval)
