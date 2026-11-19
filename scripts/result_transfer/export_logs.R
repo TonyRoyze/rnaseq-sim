@@ -2,9 +2,10 @@
 # Copy run logs, including logs from incomplete batches.
 args <- commandArgs(TRUE)
 if (!length(args) || any(args %in% c('--help', '-h'))) {
-  cat('Usage: Rscript scripts/result_transfer/export_logs.R --destination PATH [--source PATH]\n',
+  cat('Usage: Rscript scripts/result_transfer/export_logs.R --source PATH [--destination PATH]\n',
       'Source defaults to results/assignments_100_v5 from the working directory.\n',
-      'Pass the assignment root or a single config folder. Existing log copies are refreshed.\n',
+      'Destination defaults to a sibling folder named <source>_logs.\n',
+      'Recursively copies .log files from any source directory and refreshes existing copies.\n',
       sep='')
   quit(status=0L)
 }
@@ -17,11 +18,14 @@ for (i in seq.int(1L, length(args), by=2L)) {
     stop('Unknown option or missing value: ', args[i])
   opts[[substring(args[i], 3L)]] <- args[i+1L]
 }
-if (is.null(opts$destination)) stop('--destination is required.')
 root <- normalizePath(opts$source, winslash='/', mustWork=TRUE)
 if (!dir.exists(root)) stop('Source must be a directory.')
+if (is.null(opts$destination)) {
+  if (dirname(root) == root) stop('Specify --destination when the source is a filesystem root.')
+  opts$destination <- file.path(dirname(root), paste0(basename(root), '_logs'))
+}
 
-logs <- list.files(root, pattern='[.]log$', recursive=TRUE)
+logs <- list.files(root, pattern='[.]log$', recursive=TRUE, all.files=TRUE, ignore.case=TRUE)
 if (!length(logs)) stop('No .log files found in ', root)
 prefix <- if (grepl('^config-[0-9]+(-.*)?$', basename(root))) basename(root) else ''
 dir.create(opts$destination, recursive=TRUE, showWarnings=FALSE)

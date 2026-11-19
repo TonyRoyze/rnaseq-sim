@@ -155,13 +155,13 @@ assignment resume transfer.
 From the project folder on Windows, run:
 
 ```powershell
-Rscript --vanilla scripts/result_transfer/export_logs.R --source results/assignments_100_v5/config-029-DESeq2 --destination "E:/RNA-logs"
+Rscript --vanilla scripts/result_transfer/export_logs.R --source results/assignments_100_v5
 ```
 
-Omit `--source` to copy logs from the entire `results/assignments_100_v5`
-directory. The script copies `.log` files from complete and incomplete batches
-and preserves their config, worker, and batch paths. Rerunning refreshes
-existing log copies.
+This copies logs to `results/assignments_100_v5_logs`. The script accepts any
+source directory and recursively copies `.log` files (case-insensitive),
+preserving their directory structure. Use `--destination "E:/RNA-logs"` to
+override the sibling folder. Rerunning refreshes existing log copies.
 
 Validation: `Rscript --vanilla tests/assignment_migration.R` exercises isolated
 fixtures for preview, idempotent copying, receiving-machine transfer, temporary
