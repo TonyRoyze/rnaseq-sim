@@ -150,6 +150,19 @@ supports the older shard/batch pipeline and retains its existing hash-based
 naming and metadata. Use `migrate_assignment.R --include-datasets` for a full
 assignment resume transfer.
 
+## Export logs separately
+
+From the project folder on Windows, run:
+
+```powershell
+Rscript --vanilla scripts/result_transfer/export_logs.R --source results/assignments_100_v5/config-029-DESeq2 --destination "E:/RNA-logs"
+```
+
+Omit `--source` to copy logs from the entire `results/assignments_100_v5`
+directory. The script copies `.log` files from complete and incomplete batches
+and preserves their config, worker, and batch paths. Rerunning refreshes
+existing log copies.
+
 Validation: `Rscript --vanilla tests/assignment_migration.R` exercises isolated
 fixtures for preview, idempotent copying, receiving-machine transfer, temporary
 files, locks, conflicts and mismatched versions/seeds/methods, plus default
