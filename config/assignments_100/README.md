@@ -242,6 +242,16 @@ not dataset IDs or physical machine IDs.
 | [099](config-099.dcf) | ROTS | 68041 | 102060 | | Unassigned |
 | [100](config-100.dcf) | ROTS | 102061 | 136080 | | Unassigned |
 
+## Restart summary
+
+The normal assignment launcher automatically prints a per-worker progress summary
+before starting workers and again when they stop. It reports finished datasets,
+remaining datasets (including partial batches), generation successes/failures,
+and analysis method/setting successes/failures. The startup values are recorded
+statuses, not a claim that all files have already been verified. Workers verify
+completed batches before skipping them, reuse existing files in partial batches,
+and retry failed/missing work before continuing unstarted batches.
+
 ## Read-only progress monitor
 
 From the project directory in PowerShell:

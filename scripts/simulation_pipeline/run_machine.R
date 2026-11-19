@@ -6,6 +6,7 @@ setwd(normalizePath(file.path(dirname(p),'../..')))
 source('scripts/simulation_pipeline/machine_config.R')
 source('scripts/shared/version.R')
 source('scripts/simulation_pipeline/resume.R')
+source('scripts/simulation_pipeline/progress.R')
 args <- commandArgs(TRUE)
 if (any(args %in% c('--help','-h'))) {
   cat('Usage: Rscript scripts/simulation_pipeline/run_machine.R [--config config/machine.dcf] [--plan-only]\n')
@@ -50,6 +51,11 @@ state <- file.path(root,'machine_options.rds')
 legacy_resume <- FALSE
 if(file.exists(state)) legacy_resume <- check_assignment_resume(readRDS(state), cfg, simulation_version)
 if(!file.exists(state)) saveRDS(snapshot,state)
+cat('\nSTARTUP SUMMARY: recorded progress before workers resume\n')
+show_progress(root, cfg[['Job-End']] - cfg[['Job-Start']] + 1)
+cat('Resume plan: verify and skip completed batches; reuse existing files in incomplete\n',
+    'batches and retry missing/failed work, then continue unstarted batches.\n', sep='')
+flush.console()
 # Prevent two launchers from writing the same machine output concurrently.
 lock <- file.path(root,'.machine-running')
 if(!dir.create(lock,showWarnings=FALSE)) stop('Output is locked by another launcher. After a crash, verify all workers stopped before removing ',lock)
@@ -115,5 +121,7 @@ run_pool <- function() {
     worker_main,cfg=cfg,simulation_args=simulation_args,root=root,project_root=getwd())
 }
 results <- run_pool()
+cat('\nFINAL SUMMARY: recorded progress after workers stopped\n')
+show_progress(root, cfg[['Job-End']] - cfg[['Job-Start']] + 1)
 for(result in results) cat('Worker',result$worker,if(result$success) 'complete' else result$error,'\n')
 if(any(!vapply(results,`[[`,logical(1),'success'))) quit(status=1L)

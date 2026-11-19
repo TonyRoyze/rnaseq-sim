@@ -58,6 +58,7 @@ show_progress <- function(root, expected = NA_real_) {
   if (is.finite(expected)) {
     cat(sprintf('Finished datasets (whole batches): %.0f / %.0f (%.1f%%)\n',
                 total, expected, 100 * total / expected))
+    cat(sprintf('Remaining datasets (including partial batches): %.0f\n', max(0, expected - total)))
   } else cat(sprintf('Finished datasets (whole batches): %.0f\n', total))
   if (!length(snapshot)) cat('No worker folders found yet.\n')
   cat('Worker       Finished  Batches  Generated  GenFail  AnalysisOK  AnalysisFail\n')

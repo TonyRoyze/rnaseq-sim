@@ -21,7 +21,8 @@ x <- progress_snapshot(root)[[1]]
 stopifnot(x$finished == 20, x$batches == 1)
 stopifnot(length(progress_snapshot(tempfile())) == 0)
 text <- capture.output(show_progress(root, 40))
-stopifnot(any(grepl('20 / 40 (50.0%)', text, fixed = TRUE)))
+stopifnot(any(grepl('20 / 40 (50.0%)', text, fixed = TRUE)),
+  any(grepl('Remaining datasets (including partial batches): 20', text, fixed = TRUE)))
 unlink(root, recursive = TRUE)
 cat('PASS: monitor retry deduplication, batch totals, analysis settings, latest logs, and empty outputs\n')
 config_text <- capture.output(progress_main(c('--config', 'config/assignments_100/config-007.dcf')))

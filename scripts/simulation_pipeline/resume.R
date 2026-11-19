@@ -27,14 +27,14 @@ assignment_batch_complete <- function(batch, start, end, stage) {
       if (!nrow(rows) || !all(c('status','output_file') %in% names(rows)) ||
           anyNA(rows$status) || any(rows$status != 'complete'))
         stop('Completed batch has an incomplete analysis manifest: ', path)
-      old <- gsub('\\\\', '/', rows$output_file)
+      old <- chartr("\\", "/", rows$output_file)
       relative <- sub('^.*/analysis/', '', old)
       rebased <- ifelse(relative != old, file.path(batch, 'analysis', relative), rows$output_file)
       present <- file.exists(rebased)
       if (any(!present)) stop('Completed batch is missing analysis result files; restore them before resuming: ', batch)
     }
   } else {
-    files <- list.files(file.path(batch, 'datasets'), pattern='\\.rds$', recursive=TRUE)
+    files <- list.files(file.path(batch, 'datasets'), pattern='[.]rds$', recursive=TRUE)
     if (length(files) != end-start+1) stop('Completed batch is missing generated datasets: ', batch)
   }
   TRUE
