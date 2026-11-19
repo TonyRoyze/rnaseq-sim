@@ -6,6 +6,7 @@ if (!length(args) || any(args %in% c('--help', '-h'))) {
       'Source defaults to results/assignments_100_v5 from the working directory.\n',
       'Destination defaults to a sibling folder named <source>_logs.\n',
       'Recursively copies .log files from any source directory and refreshes existing copies.\n',
+      'Exported filenames join the original path components with __.\n',
       sep='')
   quit(status=0L)
 }
@@ -28,6 +29,14 @@ if (is.null(opts$destination)) {
 logs <- list.files(root, pattern='[.]log$', recursive=TRUE, all.files=TRUE, ignore.case=TRUE)
 if (!length(logs)) stop('No .log files found in ', root)
 prefix <- if (grepl('^config-[0-9]+(-.*)?$', basename(root))) basename(root) else ''
+relative_paths <- if (nzchar(prefix)) paste(prefix, logs, sep='/') else logs
+export_names <- gsub('/', '__', relative_paths, fixed=TRUE)
+name_keys <- tolower(export_names)
+collision <- anyDuplicated(name_keys)
+if (collision) {
+  stop('Multiple logs would export as ', export_names[collision], ': ',
+       paste(relative_paths[name_keys == name_keys[collision]], collapse=', '))
+}
 dir.create(opts$destination, recursive=TRUE, showWarnings=FALSE)
 destination <- normalizePath(opts$destination, winslash='/', mustWork=TRUE)
 if (!dir.exists(destination)) stop('Destination must be a directory.')
@@ -37,12 +46,7 @@ if (canonical(root) == canonical(destination) ||
     inside(destination, root) || inside(root, destination))
   stop('Choose a separate destination outside the source directory tree.')
 
-targets <- file.path(destination, logs)
-if (nzchar(prefix)) targets <- file.path(destination, prefix, logs)
-for (folder in unique(dirname(targets))) {
-  dir.create(folder, recursive=TRUE, showWarnings=FALSE)
-  if (!dir.exists(folder)) stop('Could not create destination directory: ', folder)
-}
+targets <- file.path(destination, export_names)
 for (i in seq_along(logs)) {
   if (!file.copy(file.path(root, logs[i]), targets[i], overwrite=TRUE, copy.date=TRUE))
     stop('Could not copy log: ', logs[i])

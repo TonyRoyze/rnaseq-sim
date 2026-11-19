@@ -158,10 +158,12 @@ From the project folder on Windows, run:
 Rscript --vanilla scripts/result_transfer/export_logs.R --source results/assignments_100_v5
 ```
 
-This copies logs to `results/assignments_100_v5_logs`. The script accepts any
-source directory and recursively copies `.log` files (case-insensitive),
-preserving their directory structure. Use `--destination "E:/RNA-logs"` to
-override the sibling folder. Rerunning refreshes existing log copies.
+This copies all `.log` files (case-insensitive) from the source tree directly
+into `results/assignments_100_v5_logs`. Each filename joins the original path
+components with `__`, for example
+`config-001-NBPSeq__worker-06__jobs-4341-4360__datasets__shard-001-of-001__progress.log`.
+Use `--destination "E:/RNA-logs"` to override the sibling folder. Rerunning
+refreshes existing flat copies.
 
 Validation: `Rscript --vanilla tests/assignment_migration.R` exercises isolated
 fixtures for preview, idempotent copying, receiving-machine transfer, temporary
