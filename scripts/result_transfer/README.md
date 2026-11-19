@@ -122,10 +122,33 @@ The same R migration commands work on macOS/Linux with appropriate drive paths.
 - This tool does not change the experiment, redistribute jobs between configs,
   merge different assignments, or convert old-version datasets to version 5.2.
 
-The older `export_results.R` / `import_results.R` tools transfer analysis-only
-exports from the older shard/batch pipeline; they are not full assignment
-resume transfers. `simulation_pipeline/migrate_pipeline.R` targets that older
-pipeline layout and should not be used for numbered assignments.
+## Export completed analysis files with short names
+
+From the project folder, run this PowerShell command to export every numbered
+assignment to a drive or a separate folder.
+
+```powershell
+Rscript --vanilla scripts/result_transfer/export_results.R --source results/assignments_100_v5 --destination "E:/RNA-results"
+```
+
+For a single assignment, point `--source` at its `config-NNN-*` folder. For
+older output, supply the corresponding versioned source folder and use a
+separate destination. Assignment exports contain finalized analysis RDS files,
+including successful results from partial batches. Files use paths such as
+`030/000001.rds`. Keep `export_index.csv` with them. It records each original
+path, short path, and MD5 hash. Rerunning an export reuses indexed names for
+unchanged files. Exporting a single config preserves other indexed configs.
+
+To verify and copy an export while retaining its short paths, use:
+
+```powershell
+Rscript --vanilla scripts/result_transfer/import_results.R --source "E:/RNA-results" --destination "C:/RNA-results" --layout short
+```
+
+The import default restores the original indexed paths. The exporter also
+supports the older shard/batch pipeline and retains its existing hash-based
+naming and metadata. Use `migrate_assignment.R --include-datasets` for a full
+assignment resume transfer.
 
 Validation: `Rscript --vanilla tests/assignment_migration.R` exercises isolated
 fixtures for preview, idempotent copying, receiving-machine transfer, temporary

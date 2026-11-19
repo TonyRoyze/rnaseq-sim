@@ -5,9 +5,9 @@ p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 setwd(normalizePath(file.path(dirname(p), '../..')))
 
 args <- commandArgs(TRUE)
-opts <- list(source=NULL, destination='results/exported_analysis_v5.1')
+opts <- list(source=NULL, destination='results/exported_analysis_v5.1', layout='original')
 if (!length(args) || '--help' %in% args) {
-  cat('Usage: Rscript scripts/result_transfer/import_results.R --source "E:/RNA-results" [--destination PATH]\n',
+  cat('Usage: Rscript scripts/result_transfer/import_results.R --source "E:/RNA-results" [--destination PATH] [--layout original|short]\n',
       'Imports files listed in export_index.csv, verifies MD5 hashes, and preserves existing files.\n',
       'Files already present with matching hashes are left unchanged; conflicting files are preserved and reported.\n', sep='')
   quit(status=0L)
@@ -19,10 +19,12 @@ for (i in seq.int(1L, length(args), by=2L)) {
   opts[[key]] <- args[i+1L]
 }
 if (is.null(opts$source)) stop('--source is required and must contain export_index.csv.')
+if (!opts$layout %in% c('original', 'short')) stop('--layout must be original or short.')
 source_root <- normalizePath(opts$source, winslash='/', mustWork=TRUE)
 if (!dir.exists(source_root)) stop('--source must be a directory.')
 index_path <- file.path(source_root, 'export_index.csv')
 if (!file.exists(index_path)) stop('Missing export_index.csv in source: ', source_root)
+index_hash <- unname(tools::md5sum(index_path))
 dir.create(opts$destination, recursive=TRUE, showWarnings=FALSE)
 destination <- normalizePath(opts$destination, winslash='/', mustWork=TRUE)
 canonical <- function(x) if (.Platform$OS.type == 'windows') tolower(x) else x
@@ -69,9 +71,10 @@ copy_verified <- function(src, dst, expected) {
 }
 
 actions <- character(nrow(index))
+destination_paths <- if (opts$layout == 'short') index$export_relative else index$source_relative
 for (i in seq_len(nrow(index))) {
   src <- file.path(source_root, gsub('/', .Platform$file.sep, index$export_relative[i], fixed=TRUE))
-  dst <- file.path(destination, gsub('/', .Platform$file.sep, index$source_relative[i], fixed=TRUE))
+  dst <- file.path(destination, gsub('/', .Platform$file.sep, destination_paths[i], fixed=TRUE))
   if (!file.exists(src) || dir.exists(src)) stop('Indexed source file is missing: ', src)
   actions[i] <- copy_verified(src, dst, index$md5[i])
   if (i %% 100L == 0L) { cat('Verified', i, 'of', nrow(index), 'files\n'); flush.console() }
@@ -80,6 +83,10 @@ cat('Import complete:', sum(actions == 'copied'), 'copied,', sum(actions == 'unc
     'already present,', sum(actions == 'conflict'), 'conflicts left untouched. Destination:', destination, '\n')
 if (any(actions == 'conflict')) {
   cat('Conflicting destination files (not overwritten):\n')
-  cat(paste0('  ', index$source_relative[actions == 'conflict']), sep='\n')
+  cat(paste0('  ', destination_paths[actions == 'conflict']), sep='\n')
   cat('\n')
+}
+if (opts$layout == 'short' && !any(actions == 'conflict')) {
+  index_action <- copy_verified(index_path, file.path(destination, 'export_index.csv'), index_hash)
+  if (index_action == 'conflict') stop('Destination export index differs. Use a fresh destination to retain the mapping.')
 }

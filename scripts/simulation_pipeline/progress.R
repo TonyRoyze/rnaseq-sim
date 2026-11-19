@@ -84,6 +84,17 @@ show_progress <- function(root, expected = NA_real_, worker_plan = NULL,
       'Latest log activity does not prove a worker is still running.\n', sep = '')
   invisible(snapshot)
 }
+progress_config_for_output <- function(output, config_dir = file.path('config', 'assignments_100')) {
+  match <- regexec('config-([0-9]+)', basename(output))
+  config_number <- regmatches(basename(output), match)[[1]]
+  if (!length(config_number)) return(NULL)
+  path <- file.path(config_dir, sprintf('config-%03d.dcf', as.integer(config_number[2])))
+  if (!file.exists(path)) return(NULL)
+  config_lines <- readLines(path, warn = FALSE)
+  con <- textConnection(config_lines[!grepl('^[[:space:]]*#', config_lines)])
+  tryCatch(read.dcf(con), finally = close(con))
+}
+
 progress_main <- function(args = commandArgs(TRUE)) {
   config <- 'config/machine.dcf'; output <- NULL; live <- FALSE; interval <- 15
   i <- 1L
@@ -105,6 +116,8 @@ progress_main <- function(args = commandArgs(TRUE)) {
   if (length(interval) != 1 || !is.finite(interval) || interval < 1)
     stop('--interval must be at least 1 second.')
   expected <- NA_real_
+  worker_plan <- NULL
+  jobs_per_batch <- NA_real_
   if (is.null(output)) {
     config_lines <- readLines(config, warn = FALSE)
     con <- textConnection(config_lines[!grepl('^\\s*#', config_lines)])
@@ -118,6 +131,18 @@ progress_main <- function(args = commandArgs(TRUE)) {
     config[['Job-End']] <- as.numeric(config[['Job-End']])
     worker_plan <- machine_worker_ranges(config)
     jobs_per_batch <- as.numeric(cfg[1, 'Jobs-Per-Batch'])
+  } else {
+    cfg <- progress_config_for_output(output)
+    if (!is.null(cfg)) {
+      source('scripts/simulation_pipeline/machine_config.R')
+      config <- as.list(cfg[1, ])
+      config$Workers <- as.numeric(config$Workers)
+      config[['Job-Start']] <- as.numeric(config[['Job-Start']])
+      config[['Job-End']] <- as.numeric(config[['Job-End']])
+      worker_plan <- machine_worker_ranges(config)
+      jobs_per_batch <- as.numeric(cfg[1, 'Jobs-Per-Batch'])
+      expected <- as.numeric(config[['Job-End']]) - as.numeric(config[['Job-Start']]) + 1
+    }
   }
   output <- normalizePath(output, winslash = '/', mustWork = FALSE)
   repeat {
