@@ -139,10 +139,11 @@ including successful results from partial batches. Files use paths such as
 path, short path, and MD5 hash. Rerunning an export reuses indexed names for
 unchanged files. Exporting a single config preserves other indexed configs.
 
-To verify and copy an export while retaining its short paths, use:
+To verify and copy an export while retaining its short paths, run this from
+the workspace root:
 
 ```powershell
-Rscript --vanilla scripts/result_transfer/import_results.R --source "E:/RNA-results" --destination "C:/RNA-results" --layout short
+Rscript --vanilla import_results.R --source "E:/RNA-results" --destination "C:/RNA-results" --layout short
 ```
 
 The import default restores the original indexed paths. The exporter also

@@ -28,7 +28,7 @@ source-dataset caveats, read `../HANDOFF.md` in the enclosing agent-rick workspa
 | `scripts/simulation_counts/check_batch.R` | Verify generated batch coverage |
 | `scripts/de_analysis/smoke_test_10.R` | Exercise all methods on ten datasets |
 | `scripts/simulation_pipeline/migrate_pipeline.R` | Preview/apply old result-layout migration |
-| `scripts/result_transfer/export_results.R`, `import_results.R` | Portable result transfer |
+| `scripts/result_transfer/export_results.R`, workspace-root `import_results.R` and `import_exports.py` | Portable result transfer |
 | `automations/setup_windows.ps1` | Windows environment checks |
 
 ## Refactor record — 2026-11-13
