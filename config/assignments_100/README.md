@@ -17,6 +17,30 @@ assignment's existing folder. The launcher checks saved scientific settings
 and records each launch in `resume_history.rds`. Earlier v5.2 outputs retained
 by a v5.3 resume are uncapped, so track their provenance separately.
 
+### Reuse a stopped assignment for gamma-count
+
+From the repository root, preview the migration with the matching numbered
+gamma-count config and the old assignment folder:
+
+```powershell
+Rscript --vanilla scripts/result_transfer/migrate_gamma_count.R --config config/assignments_100/config-001.dcf --source results/assignments_100_v5/config-001-NBPSeq
+```
+
+Stop the assignment's workers before applying. Add `--apply` to the same
+command to move obsolete datasets and results, old status records, and
+superseded completion markers into a sibling backup tree. The migration keeps
+Poisson and negative-binomial files in place and writes a resume config for
+that exact folder. If interrupted, rerun the same migration command before
+launching any workers. The launcher blocks while a migration is pending.
+
+```powershell
+Rscript scripts/simulation_pipeline/run_machine.R --config results/assignments_100_v5/config-001-NBPSeq/gamma_count_config.dcf
+```
+
+Use the original full assignment folder with its saved machine state. A
+results-only export lacks the datasets and metadata needed for this migration.
+Use the new gamma-count output paths for assignments with no old work to reuse.
+
 The assignment runner retains datasets and analysis results. The separate
 `run_pipeline.R` runner removes datasets after successful analysis.
 

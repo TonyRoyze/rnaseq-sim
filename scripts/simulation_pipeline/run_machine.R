@@ -49,19 +49,26 @@ options(mc.cores=1L)
 root <- normalizePath(cfg$Output,winslash='/',mustWork=FALSE)
 dir.create(root,recursive=TRUE,showWarnings=FALSE)
 if(!dir.exists(root)) stop('Cannot create output directory.')
-snapshot <- list(version=simulation_version,config=cfg)
-state <- file.path(root,'machine_options.rds')
-legacy_resume <- FALSE
-if(file.exists(state)) legacy_resume <- check_assignment_resume(readRDS(state), cfg, simulation_version)
-if(!file.exists(state)) saveRDS(snapshot,state)
-cat('\nSTARTUP SUMMARY: recorded progress before workers resume\n')
-show_progress(root, cfg[['Job-End']] - cfg[['Job-Start']] + 1)
-cat('Resume plan: verify and skip completed batches; reuse existing files in incomplete\n',
-    'batches and retry missing/failed work, then continue unstarted batches.\n', sep='')
-flush.console()
 # Prevent two launchers from writing the same machine output concurrently.
 lock <- file.path(root,'.machine-running')
 if(!dir.create(lock,showWarnings=FALSE)) stop('Output is locked by another launcher. After a crash, verify all workers stopped before removing ',lock)
+tryCatch({
+  if (file.exists(file.path(root, '.gamma-count-migration.rds')))
+    stop('Finish the gamma-count migration before running this assignment.')
+  snapshot <- list(version=simulation_version,config=cfg)
+  state <- file.path(root,'machine_options.rds')
+  legacy_resume <- FALSE
+  if(file.exists(state)) legacy_resume <- check_assignment_resume(readRDS(state), cfg, simulation_version)
+  if(!file.exists(state)) saveRDS(snapshot,state)
+  cat('\nSTARTUP SUMMARY: recorded progress before workers resume\n')
+  show_progress(root, cfg[['Job-End']] - cfg[['Job-Start']] + 1)
+  cat('Resume plan: verify and skip completed batches; reuse existing files in incomplete\n',
+      'batches and retry missing/failed work, then continue unstarted batches.\n', sep='')
+  flush.console()
+}, error=function(e) {
+  unlink(lock, recursive=TRUE)
+  stop(e)
+})
 if (legacy_resume) {
   cat('RESUME: preserving uncapped v5.2 results; newly generated datasets use the v5.3 baseline cap.\n')
 }
