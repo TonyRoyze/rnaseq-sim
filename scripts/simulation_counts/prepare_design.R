@@ -2,7 +2,7 @@
 # design: selected genes, expected-count multipliers, DE truth, and dispersions.
 prepare_simulation_design <- function(
     params, s, n_var, n_diffexp, count_model, dispersion_scale,
-    dispersion_source, dispersion_estimator, library_size_factors, library_size_sdlog,
+    dispersion_source, dispersion_estimator,
     fold_change_min, fold_change_excess_rate, upregulated_fraction,
     batch, batch_fraction, batch_effect, group_sizes = NULL, fixed_fold_change = FALSE) {
 
@@ -15,7 +15,6 @@ prepare_simulation_design <- function(
     stop("s, n_var, and n_diffexp must be whole numbers.")
   }
   validate_simulation_scalar(dispersion_scale, "dispersion_scale", 0, Inf, FALSE)
-  validate_simulation_scalar(library_size_sdlog, "library_size_sdlog", 0, Inf)
   validate_simulation_scalar(fold_change_min, "fold_change_min", 1, Inf)
   validate_simulation_scalar(fold_change_excess_rate, "fold_change_excess_rate", 0, Inf, FALSE)
   validate_simulation_scalar(upregulated_fraction, "upregulated_fraction", 0, 1)
@@ -89,15 +88,6 @@ prepare_simulation_design <- function(
   n_samples <- sum(group_sizes)
   condition <- factor(rep(c("group1", "group2"), times = group_sizes),
                       levels = c("group1", "group2"))
-  if (is.null(library_size_factors)) {
-    library_size_factors <- if (library_size_sdlog == 0) rep(1, n_samples) else
-      exp(stats::rnorm(n_samples, sd = library_size_sdlog))
-  }
-  if (length(library_size_factors) != n_samples ||
-      any(!is.finite(library_size_factors)) || any(library_size_factors <= 0)) {
-    stop("library_size_factors must contain one positive finite value per sample.")
-  }
-  library_size_factors <- library_size_factors / exp(mean(log(library_size_factors)))
 
   if (is.null(batch)) {
     batch <- if (batch_effect == 1) rep("batch1", n_samples) else
@@ -138,7 +128,6 @@ prepare_simulation_design <- function(
     baseline_mean_capped = baseline_mean_capped, baseline_mean_cap = baseline_mean_cap,
     dispersion = dispersion_used, dispersion_unscaled = dispersion_unscaled,
     dispersion_mom = dispersion_mom, dispersion_edger = dispersion_edger,
-    library_size_factors = library_size_factors,
     batch = batch, batch_multiplier = batch_multiplier,
     fold_change = fold_change, direction = direction
   )

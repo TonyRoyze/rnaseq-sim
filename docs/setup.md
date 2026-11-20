@@ -147,9 +147,9 @@ for the full benchmark settings.
 
 ## Underdispersion generators
 
-Generalized Poisson is the default (`--underdispersion-model generalized_poisson`).
-Its normalized finite-support sampler uses the base R `stats` package, requiring
-no extra package installation. The optional COM-Poisson generator is selected
+Gamma-count is the default (`--underdispersion-model gamma_count`). Its CDF
+inversion sampler uses base R. Generalized Poisson remains available as
+`--underdispersion-model generalized_poisson`. COM-Poisson is selected
 with `--underdispersion-model com_poisson`. `COMPoissonReg` 0.8.2 and its
 Rcpp/numDeriv dependencies are in `renv.lock`; `automations/setup_windows.ps1` restores and
 checks the package. Manual setup on any platform:
@@ -162,4 +162,4 @@ stopifnot(requireNamespace("COMPoissonReg", quietly = TRUE))
 
 Pass the same `--underdispersion-model` flag to all workers and to
 `check_batch.R` when checking completion. The model name is saved in dataset
-IDs, so results from the two underdispersion generators are distinguishable.
+IDs, so results from the underdispersion generators are distinguishable.

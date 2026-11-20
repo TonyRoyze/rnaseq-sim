@@ -7,6 +7,7 @@ for (e in parse('scripts/simulation_counts/run_batch.R')) {
 source('scripts/simulation_design/factorial_design.R')
 source('scripts/simulation_design/batch_jobs.R')
 source('scripts/simulation_design/de_proportion_modes.R')
+source('scripts/shared/pipeline_logging.R')
 opts <- parse_args(c('--replicates','3','--batch-size','7'))
 stopifnot(inherits(try(parse_args(c('--batch-size','0')),silent=TRUE),'try-error'))
 sc <- build_scenarios(100)
@@ -91,11 +92,17 @@ stopifnot(file.exists(file.path(shard_dir,job_output_name(job))))
 log <- read.csv(manifest_path)
 stopifnot(identical(log$status,c('running','complete')))
 payload <- readRDS(log$output_file[2]); stopifnot(payload$seed==job$seed)
+# Resume appends to an older status header without shifting later columns.
+log <- cbind(log[1:2], retired_column=0, log[-(1:2)])
+write.csv(log, manifest_path, row.names=FALSE)
 # Previous sharding layout: find the identical completed file and skip it.
 stopifnot(file.rename(log$output_file[2],file.path(old_dir,job_output_name(job))))
 simulate_custom_counts <- function(...) stop('should be skipped')
 run_job(job,0)
-stopifnot(tail(read.csv(manifest_path)$output_file,1)==file.path(old_dir,job_output_name(job)))
+resumed <- read.csv(manifest_path)
+stopifnot(identical(names(resumed), names(log)),
+          is.na(tail(resumed$retired_column, 1L)),
+          tail(resumed$output_file,1)==file.path(old_dir,job_output_name(job)))
 job$scenario_id <- paste0(job$scenario_id,'_retry')
 simulate_custom_counts <- function(...) stop('failure with comma, and\nnewline')
 run_job(job,0)

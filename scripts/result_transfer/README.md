@@ -74,7 +74,7 @@ Use the same code version, original config, pinned packages and identical
 four reference RDS files. From that repository root, preview:
 
 ```powershell
-Rscript scripts/result_transfer/migrate_assignment.R --config config/assignments_100/config-001.dcf --source "E:/assignment-001" --destination "results/assignments_100_v5.2/config-001-NBPSeq" --include-datasets
+Rscript scripts/result_transfer/migrate_assignment.R --config config/assignments_100/config-001.dcf --source "E:/assignment-001" --destination "results/assignments_100_v5_gamma_count/config-001-NBPSeq" --include-datasets
 ```
 
 Repeat that command with `--apply`. Then resume:
@@ -128,11 +128,11 @@ From the project folder, run this PowerShell command to export every numbered
 assignment to a drive or a separate folder.
 
 ```powershell
-Rscript --vanilla scripts/result_transfer/export_results.R --source results/assignments_100_v5 --destination "E:/RNA-results"
+Rscript --vanilla scripts/result_transfer/export_results.R --source results/assignments_100_v5_gamma_count --destination "E:/RNA-results"
 ```
 
 For a single assignment, point `--source` at its `config-NNN-*` folder. For
-older output, supply the corresponding versioned source folder and use a
+older output, supply its existing source folder and use a
 separate destination. Assignment exports contain finalized analysis RDS files,
 including successful results from partial batches. Files use paths such as
 `030/000001.rds`. Keep `export_index.csv` with them. It records each original
@@ -156,11 +156,11 @@ assignment resume transfer.
 From the project folder on Windows, run:
 
 ```powershell
-Rscript --vanilla scripts/result_transfer/export_logs.R --source results/assignments_100_v5
+Rscript --vanilla scripts/result_transfer/export_logs.R --source results/assignments_100_v5_gamma_count
 ```
 
 This copies all `.log` files (case-insensitive) from the source tree directly
-into `results/assignments_100_v5_logs`. Each filename joins the original path
+into `results/assignments_100_v5_gamma_count_logs`. Each filename joins the original path
 components with `__`, for example
 `config-001-NBPSeq__worker-06__jobs-4341-4360__datasets__shard-001-of-001__progress.log`.
 Use `--destination "E:/RNA-logs"` to override the sibling folder. Rerunning

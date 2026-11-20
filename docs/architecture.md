@@ -16,7 +16,8 @@ source-dataset caveats, read `../HANDOFF.md` in the enclosing agent-rick workspa
 | `scripts/simulation_counts/load.R` | Load simulator modules in dependency order |
 | `scripts/simulation_counts/estimate_parameters.R` | Estimate reference expression and dispersion |
 | `scripts/simulation_counts/prepare_design.R` | Prepare simulation parameters and group design |
-| `scripts/simulation_counts/generalized_poisson.R` | Underdispersed count sampler |
+| `scripts/simulation_counts/gamma_count.R` | Default underdispersed count sampler |
+| `scripts/simulation_counts/generalized_poisson.R` | Optional generalized-Poisson sampler |
 | `scripts/simulation_counts/generate_counts.R` | Generate and perturb counts |
 | `scripts/simulation_counts/simulate_counts.R` | Public simulation function |
 | `scripts/simulation_counts/helpers.R` | Simulator validation and helper functions |

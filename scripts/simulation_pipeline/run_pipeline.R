@@ -25,7 +25,9 @@ shard_index <- as.integer(option_value('--shard-index', '1'))
 shard_count <- as.integer(option_value('--shard-count', '1'))
 if (anyNA(c(shard_index, shard_count)) || shard_index < 1L || shard_index > shard_count)
   stop('Invalid shard settings.')
-root <- file.path(paste0('results/custom_simulation_pipeline_v', simulation_version),
+model <- option_value('--underdispersion-model', 'gamma_count')
+root <- file.path(paste0('results/custom_simulation_pipeline_v', simulation_version,
+                         if (model == 'gamma_count') '_gamma_count' else ''),
                   sprintf('shard-%03d-of-%03d', shard_index, shard_count))
 check_pipeline_paths(root)
 dir.create(root, recursive=TRUE, showWarnings=FALSE)
@@ -47,7 +49,18 @@ run <- function(script, args) {
 }
 # Persist arguments so a resumed pipeline cannot silently change its experiment.
 config <- file.path(root, 'options.rds')
-if (file.exists(config) && !identical(readRDS(config), args)) stop('Pipeline options differ from the existing run.')
+if (file.exists(config)) {
+  with_model <- function(values, default) {
+    pos <- match('--underdispersion-model', values)
+    if (is.na(pos)) return(c(values, '--underdispersion-model', default))
+    flag <- c(pos, pos + 1L)
+    c(values[-flag], values[flag])
+  }
+  # Before the gamma-count output folder existed, an omitted flag meant GP.
+  saved_default <- if (model == 'gamma_count') 'gamma_count' else 'generalized_poisson'
+  if (!identical(with_model(readRDS(config), saved_default), with_model(args, 'gamma_count')))
+    stop('Pipeline options differ from the existing run.')
+}
 if (!file.exists(config)) saveRDS(args, config)
 index <- 1L
 skipped_batches <- 0L
@@ -72,8 +85,6 @@ repeat {
   source('scripts/simulation_design/factorial_design.R')
   nvar <- 10000L
   pos <- match('--n-var', args); if (!is.na(pos)) nvar <- as.integer(args[pos+1L])
-  model <- 'generalized_poisson'
-  pos <- match('--underdispersion-model', args); if (!is.na(pos)) model <- args[pos+1L]
   nde <- 7L
   pos <- match('--de-proportions', args); if (!is.na(pos)) nde <- length(strsplit(args[pos+1L], ',', fixed=TRUE)[[1]])
   pos <- match('--de-mode', args); if (!is.na(pos) && !args[pos+1L] %in% c('3','fixed')) nde <- 1L

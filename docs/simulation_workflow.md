@@ -14,7 +14,7 @@ flowchart TD
 
   subgraph PLAN["B. Define the experiment once"]
     INPUT["Reference input<br/>Default: data/DGElist_BRCA.rds<br/>edgeR DGEList: count matrix + 2 group labels"]
-    FACTORS["Full-factorial scenario grid<br/>Sample size / balance · count model<br/>DE fraction · fold change · up share<br/>library-size variation · outliers · zeros<br/>batch effect · dispersion scale / k"]
+    FACTORS["Full-factorial scenario grid<br/>Sample size / balance · count model<br/>DE fraction · fold change · up share<br/>outliers · zeros<br/>batch effect · dispersion scale / k"]
     JOBS["Bounded job planner<br/>scenario × DE fraction × replicate × reference<br/>stable job ID + deterministic seed"]
     SHARDS["Shard assignment<br/>index i of N workers<br/>same options and output root on all workers"]
     FACTORS --> JOBS --> SHARDS
@@ -38,12 +38,12 @@ flowchart TD
     SKIP["Skip existing dataset<br/>record complete in status.csv"]
     SELECT["Select n_var source genes<br/>without replacement (default 10,000)<br/>use reference total means"]
     TRUTH["Assign simulation truth<br/>n_diffexp = round(n_var × DE fraction)<br/>choose DE genes; assign up/down directions<br/>draw fold changes from scenario minimum"]
-    DESIGN["Prepare sample design<br/>group sizes / balance<br/>library factors: log-normal draws, geometric mean = 1<br/>batch labels and multiplier"]
-    MU["Build expected means<br/>baseline reference mean × group-2 fold change<br/>× sample library factor × batch multiplier"]
+    DESIGN["Prepare sample design<br/>group sizes / balance<br/>batch labels and multiplier"]
+    MU["Build expected means<br/>baseline reference mean × group-2 fold change<br/>× batch multiplier"]
     DRAWS{"Choose count distribution"}
     POIS["Poisson<br/>mean = μ"]
     NB["Negative binomial<br/>mean = μ; dispersion = selected estimator × scale"]
-    UNDER["Underdispersed<br/>generalized Poisson by default<br/>calibrate mean μ and variance/mean k<br/>or optional COM-Poisson"]
+    UNDER["Underdispersed<br/>gamma-count by default<br/>target mean μ and variance/mean k<br/>optional generalized Poisson or COM-Poisson"]
     OUTLIERS["Inject outlier cells<br/>configured fraction × random multiplier 5–10"]
     ZEROS["Add extra zeros<br/>set configured fraction of cells to zero"]
     ASSEMBLE["Assemble simulation result<br/>integer count matrix as edgeR DGEList<br/>sample metadata · truth labels · parameters"]

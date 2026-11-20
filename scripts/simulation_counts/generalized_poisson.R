@@ -6,7 +6,9 @@ gp_probabilities <- function(theta, shape, max_support = 1000000L) {
     stop("Generalized-Poisson parameters must be finite with theta > 0 and shape < 0.")
   upper <- ceiling(theta / -shape) - 1
   if (!is.finite(upper) || upper > max_support)
-    stop("Generalized-Poisson support exceeds the configured numerical limit.")
+    stop(sprintf(paste0("Generalized-Poisson support exceeds the configured numerical limit.",
+                        " (upper=%.0f, limit=%.0f, theta=%.16g, shape=%.16g)"),
+                 upper, max_support, theta, shape), call. = FALSE)
   y <- seq.int(0, upper)
   z <- theta + shape * y
   logp <- log(theta) + (y - 1) * log(z) - z - lgamma(y + 1)

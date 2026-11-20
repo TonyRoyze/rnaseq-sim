@@ -6,35 +6,19 @@ one DE method with all its requested core normalization variants. It keeps
 among the same four reference files. Each method covers dataset IDs 1–136080
 exactly once. Different methods deliberately regenerate the same datasets.
 
-The assignment output folder is stable: `results/assignments_100_v5/`.
-Simulation format versions remain in saved data for provenance. Existing v5.2
-and v5.3 assignments can be moved into this folder and resumed with the same
-scientific config. The original `machine_options.rds` is preserved and each
-launch is recorded in `resume_history.rds`. Changed seeds, ranges, methods, or
-other config fields still fail validation; only the output path may change.
+These configs use gamma-count for underdispersion and write to
+`results/assignments_100_v5_gamma_count/`. The baseline mean cap is 180,000.
+Completed batches are checked before being skipped, and incomplete batches
+reuse files in the same assignment before retrying missing or failed work.
 
-Stop all workers before renaming an existing output folder in PowerShell:
+To resume an earlier generalized-Poisson assignment, copy the matching config,
+set `Underdispersion-Model: generalized_poisson`, and set `Output` to that
+assignment's existing folder. The launcher checks saved scientific settings
+and records each launch in `resume_history.rds`. Earlier v5.2 outputs retained
+by a v5.3 resume are uncapped, so track their provenance separately.
 
-```powershell
-# Only if assignments_100_v5 does not already exist:
-Rename-Item .\results\assignments_100_v5.2 -NewName assignments_100_v5
-```
-
-Use `assignments_100_v5.3` as the source if that is the folder you have. Do not
-rename both to the same destination or merge overlapping assignments blindly.
-The scripts do not rename folders automatically. After the rename, use the
-same config to resume. Completed batches are skipped after checking their
-markers, manifests, and result-file presence. Missing completed result files
-stop the run so they can be restored rather than silently regenerated.
-Incomplete batches reuse generated datasets and existing analysis files and
-retry missing/failed work.
-
-Version 5.3 caps newly generated baseline means at 180,000. Retained v5.2
-datasets/results remain uncapped. Resuming them is explicitly allowed to
-preserve work, but creates a mixed-design assignment: compare/report the
-versions separately rather than treating all outputs as capped simulations.
-The assignment runner retains datasets and analysis results; it has no cleanup
-step. The separate `run_pipeline.R` runner does remove datasets after analysis.
+The assignment runner retains datasets and analysis results. The separate
+`run_pipeline.R` runner removes datasets after successful analysis.
 
 The 27/27/10 assignments for NBPSeq/DESeq2/DESeq plus 36 assignments divided
 equally among the other nine methods extend the provisional 8/8/3/11 physical
@@ -262,7 +246,7 @@ powershell -ExecutionPolicy Bypass -File .\automations\progress.ps1 --config con
 # Live refresh every 15 seconds; Ctrl+C stops only the monitor
 powershell -ExecutionPolicy Bypass -File .\automations\progress.ps1 --config config/assignments_100/config-007.dcf --live --interval 15
 # Inspect earlier output instead of the config's current output directory
-powershell -ExecutionPolicy Bypass -File .\automations\progress.ps1 --output results/assignments_100_v5.2/config-007-NBPSeq
+powershell -ExecutionPolicy Bypass -File .\automations\progress.ps1 --output results/assignments_100_v5_gamma_count/config-007-NBPSeq
 ```
 
 Use `config-008.dcf` for assignment 8. macOS/Linux can invoke

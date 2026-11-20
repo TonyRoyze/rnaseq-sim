@@ -5,19 +5,19 @@ script_arg <- grep("^--file=", all_args, value = TRUE)
 if (!length(script_arg)) stop("Run this script with Rscript.")
 project_root <- normalizePath(file.path(dirname(normalizePath(sub("^--file=", "", script_arg[1]), mustWork=TRUE)), "../.."), mustWork=TRUE)
 setwd(project_root)
-simulation_version <- "4.0"
-opts <- list(output=paste0("results/custom_simulation_v", simulation_version),
+source("scripts/shared/version.R")
+opts <- list(output=NULL,
   reference="data/DGElist_BRCA.rds", reference_mode="brca",
   references=c("data/DGElist_BRCA.rds","data/DGElist_E-ENAD-34.rds","data/DGElist_GSE150910.rds","data/DGElist_LUSC.rds"),
   replicates=1L, shard_count=1L, batch_size=1000L, n_var=10000L,
-  base_seed=20261024L, underdispersion_model="generalized_poisson", de_mode="fixed", de_proportions=c(.1,.2,.3,.4,.5,.6,.75),
+  base_seed=20261024L, underdispersion_model="gamma_count", de_mode="fixed", de_proportions=c(.05,.25,.75),
   dispersion_estimator="method_of_moments", include_imbalance=TRUE, deep=FALSE)
 a <- commandArgs(TRUE)
 if (any(a %in% c("--help","-h"))) {
   cat("Usage: Rscript scripts/simulation_counts/check_batch.R [same design flags as run_batch.R] [--deep]\n",
       "Options: --output PATH --reference-mode brca|all|random --reference PATH\n",
       "         --references PATHS --replicates N --shard-count N --n-var N\n",
-      "         --underdispersion-model generalized_poisson|com_poisson\n",
+      "         --underdispersion-model gamma_count|generalized_poisson|com_poisson\n",
       "         --base-seed N --de-mode 1|2|3 --de-proportions LIST\n",
       "         --dispersion-estimator METHOD --include-imbalance|--no-imbalance --batch-size N --deep\n",
       "Default check verifies expected files; --deep also validates each RDS.\n", sep="")
@@ -37,7 +37,7 @@ while (i <= length(a)) {
 }
 nums <- unlist(opts[c("replicates","shard_count","batch_size","n_var","base_seed")])
 if(anyNA(nums)||any(nums<1)) stop("Numeric options must be positive integers.")
-if(!opts$underdispersion_model%in%c("generalized_poisson","com_poisson")) stop("Invalid underdispersion model.")
+if(!opts$underdispersion_model%in%c("gamma_count","generalized_poisson","com_poisson")) stop("Invalid underdispersion model.")
 if(!opts$reference_mode%in%c("brca","all","random")) stop("Invalid reference mode.")
 if(!opts$dispersion_estimator%in%c("method_of_moments","edgeR")) stop("Invalid dispersion estimator.")
 aliases <- c("1"="combination","2"="setting","3"="fixed")
@@ -45,6 +45,10 @@ if(opts$de_mode%in%names(aliases)) opts$de_mode <- unname(aliases[opts$de_mode])
 if(!opts$de_mode%in%c("combination","setting","fixed")) stop("Invalid DE mode.")
 if(!length(opts$de_proportions)||any(!is.finite(opts$de_proportions))||any(opts$de_proportions<=0|opts$de_proportions>=1)||anyDuplicated(opts$de_proportions)) stop("Invalid DE proportions.")
 resolve_path <- function(p) if(grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)",p)) path.expand(p) else file.path(project_root,p)
+if (is.null(opts$output)) {
+  opts$output <- paste0("results/custom_simulation_v", simulation_version,
+                        if (opts$underdispersion_model == "gamma_count") "_gamma_count" else "")
+}
 root <- resolve_path(opts$output)
 if(!dir.exists(root)) stop("Output directory not found: ",root)
 ref_paths <- vapply(if(opts$reference_mode=="brca") opts$reference else opts$references,resolve_path,character(1))

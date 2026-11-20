@@ -3,7 +3,7 @@
 args <- commandArgs(TRUE)
 if (!length(args) || any(args %in% c('--help', '-h'))) {
   cat('Usage: Rscript scripts/result_transfer/export_logs.R --source PATH [--destination PATH]\n',
-      'Source defaults to results/assignments_100_v5 from the working directory.\n',
+      'Source defaults to the gamma-count assignment folder when present.\n',
       'Destination defaults to a sibling folder named <source>_logs.\n',
       'Recursively copies .log files from any source directory and refreshes existing copies.\n',
       'Exported filenames join the original path components with __.\n',
@@ -11,7 +11,8 @@ if (!length(args) || any(args %in% c('--help', '-h'))) {
   quit(status=0L)
 }
 
-opts <- list(source='results/assignments_100_v5', destination=NULL)
+new_root <- 'results/assignments_100_v5_gamma_count'
+opts <- list(source=if (dir.exists(new_root)) new_root else 'results/assignments_100_v5', destination=NULL)
 if (length(args) %% 2L) stop('Each option requires a value.')
 for (i in seq.int(1L, length(args), by=2L)) {
   if (!args[i] %in% c('--source', '--destination') ||

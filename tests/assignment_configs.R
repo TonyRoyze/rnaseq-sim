@@ -22,7 +22,8 @@ scientific_fields <- setdiff(names(configs[[1]]),
                             c('Job-Start', 'Job-End', 'Output', 'Methods'))
 outputs <- vapply(configs, `[[`, character(1), 'Output')
 stopifnot(!anyDuplicated(outputs))
-stopifnot(all(startsWith(outputs, 'results/assignments_100_v5/')))
+stopifnot(all(startsWith(outputs, 'results/assignments_100_v5_gamma_count/')),
+          all(vapply(configs, function(cfg) cfg[['Underdispersion-Model']] == 'gamma_count', logical(1))))
 opts <- parse_args(machine_simulation_args(configs[[1]]))
 total <- nrow(build_scenarios(opts$n_var, opts$include_imbalance,
                              opts$underdispersion_model)) * opts$replicates *

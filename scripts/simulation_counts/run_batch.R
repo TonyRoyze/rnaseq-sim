@@ -10,6 +10,7 @@ project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork
 setwd(project_root)
 source("scripts/shared/pipeline_logging.R")
 start_pipeline_log()
+pipeline_context("generation startup")
 
 source("scripts/shared/version.R")
 
@@ -24,7 +25,7 @@ parse_args <- function(args) {
       "data/DGElist_GSE150910.rds",
       "data/DGElist_LUSC.rds"
     ),
-    output = paste0("results/custom_simulation_v", simulation_version),
+    output = NULL,
     parameter_cache_dir = NULL,
     shard_index = 1L,
     shard_count = 1L,
@@ -36,7 +37,7 @@ parse_args <- function(args) {
     job_index = 0L,
     job_start = NULL, job_end = NULL,
     de_mode = "fixed",
-    underdispersion_model = "generalized_poisson",
+    underdispersion_model = "gamma_count",
     de_proportions = c(0.05, 0.25, 0.75),
     n_var = 10000L,
     base_seed = 20261024L,
@@ -70,7 +71,7 @@ parse_args <- function(args) {
       "  --job-index N        Regenerate only this original job ID",
       "  --batch-size N        Maximum job records in memory (default: 1000)",
       "  --replicates N        Replicates per setting (default: 1)",
-      "  --underdispersion-model MODEL  generalized_poisson (default) or com_poisson",
+      "  --underdispersion-model MODEL  gamma_count (default), generalized_poisson, or com_poisson",
       "  --de-mode MODE        1/combination, 2/setting, 3/fixed (default)",
       "  --de-proportions LIST Comma-separated DE proportions (default: 0.05,0.25,0.75)",
       "  --n-var N             Genes per simulated dataset (default: 10000)",
@@ -163,8 +164,8 @@ parse_args <- function(args) {
       anyDuplicated(opts$de_proportions)) {
     stop("--de-proportions must contain unique finite proportions strictly between 0 and 1.")
   }
-  if (!opts$underdispersion_model %in% c("generalized_poisson", "com_poisson"))
-    stop("--underdispersion-model must be generalized_poisson or com_poisson.")
+  if (!opts$underdispersion_model %in% c("gamma_count", "generalized_poisson", "com_poisson"))
+    stop("--underdispersion-model must be gamma_count, generalized_poisson, or com_poisson.")
   if (anyNA(c(opts$setting_batch, opts$settings_per_batch, opts$job_index)) ||
       opts$setting_batch < 0 || opts$settings_per_batch < 1 || opts$job_index < 0)
     stop("Invalid setting batch or job index.")
@@ -176,6 +177,10 @@ parse_args <- function(args) {
       stop("Specify valid inclusive --job-start and --job-end integers.")
     if (opts$shard_count != 1L || opts$setting_batch != 0L || opts$job_index != 0L)
       stop("Job ranges cannot be combined with sharding, setting batches or --job-index.")
+  }
+  if (is.null(opts$output)) {
+    opts$output <- paste0("results/custom_simulation_v", simulation_version,
+                          if (opts$underdispersion_model == "gamma_count") "_gamma_count" else "")
   }
   opts
 }
@@ -237,6 +242,7 @@ write_progress <- function(text) {
     cat("WARNING could not append progress.log: ", conditionMessage(e), "\n",
         sep = "", file = stderr())
   })
+  flush(stdout())
   flush.console()
 }
 if (options$plan_only) {
@@ -251,8 +257,13 @@ cat("Preparing R dependencies...\n")
 flush.console()
 
 if (!file.exists("renv/activate.R")) stop("renv/activate.R is missing from the project.")
+pipeline_context("generation renv activation")
 source("renv/activate.R")
-if (options$restore) renv::restore(prompt = FALSE)
+if (options$restore) {
+  pipeline_context("generation renv restore")
+  renv::restore(prompt = FALSE)
+}
+pipeline_context("generation dependencies and setup")
 if (!requireNamespace("edgeR", quietly = TRUE)) {
   stop("edgeR is unavailable. Restore the renv environment or install the locked packages.")
 }
@@ -311,6 +322,8 @@ output_dirs <- unique(c(shard_dir, list.dirs(output_root, recursive = FALSE, ful
 output_dirs <- output_dirs[grepl("^shard-[0-9]+-of-[0-9]+$", basename(output_dirs))]
 
 run_job <- function(job, completed) {
+  pipeline_context(sprintf("generation job %s | %s | seed %d",
+                           job$job_index, job$scenario_id, job$seed))
   output_name <- job_output_name(job)
   output_path <- file.path(shard_dir, output_name)
   seed <- job$seed
@@ -337,7 +350,7 @@ run_job <- function(job, completed) {
     "TESTING [%0.f/%0.f] scenario %s\n",
     "  replicate: %d/%d | model: %s | groups: %d vs %d (total %d samples)\n",
     "  genes: %d | DE: %s (%d genes) | reference: %s\n",
-    "  dispersion: %s, scale %s | variance/mean: %s | library SD: %s\n",
+    "  dispersion: %s, scale %s | variance/mean: %s\n",
     "  fold-change minimum: %s | upregulated: %s | outliers: %s | sparsity: %s\n",
     "  batch fraction: %s | batch effect: %s | seed: %d"),
     completed + 1, iterator$assigned, job$scenario_id,
@@ -345,10 +358,10 @@ run_job <- function(job, completed) {
     job$n_group1 + job$n_group2, options$n_var, job$de_fraction, job$n_diffexp, reference_id,
     job$dispersion_estimator,
     if (job$count_model == "negative_binomial") job$dispersion_scale else "n/a",
-    job$variance_mean_ratio, job$library_size_sdlog, job$fold_change_min,
+    job$variance_mean_ratio, job$fold_change_min,
     job$upregulated_fraction, job$outlier_fraction, job$sparsity,
     job$batch_fraction, job$batch_effect, seed))
-  tryCatch({
+  tryCatch(log_pipeline_errors({
     simulation_params <- get_reference_parameters(reference_path, reference_hash)
     simulation <- simulate_custom_counts(
       params = simulation_params,
@@ -359,7 +372,6 @@ run_job <- function(job, completed) {
       variance_mean_ratio = job$variance_mean_ratio,
       dispersion_estimator = options$dispersion_estimator,
       dispersion_scale = if (job$count_model == "negative_binomial") job$dispersion_scale else 1,
-      library_size_sdlog = job$library_size_sdlog,
       fold_change_min = job$fold_change_min,
       fixed_fold_change = TRUE,
       upregulated_fraction = job$upregulated_fraction,
@@ -385,7 +397,7 @@ run_job <- function(job, completed) {
     write_progress(sprintf("DONE  [%0.f/%0.f] %s | elapsed %.1f sec | output: %s",
       completed + 1, iterator$assigned, job$scenario_id,
       proc.time()[["elapsed"]] - started_at, output_name))
-  }, error = function(e) {
+  }), error = function(e) {
     record$status <<- "failed"
     record$error <<- conditionMessage(e)
     write_progress(sprintf("FAILED [%0.f/%0.f] %s | %s",

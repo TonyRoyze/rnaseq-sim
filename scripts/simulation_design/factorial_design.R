@@ -1,5 +1,5 @@
-build_scenarios <- function(n_var, include_imbalance = TRUE, underdispersion_model = "generalized_poisson") {
-  underdispersion_model <- match.arg(underdispersion_model, c("generalized_poisson", "com_poisson"))
+build_scenarios <- function(n_var, include_imbalance = TRUE, underdispersion_model = "gamma_count") {
+  underdispersion_model <- match.arg(underdispersion_model, c("gamma_count", "generalized_poisson", "com_poisson"))
   # s denotes the balanced size; each split preserves the total of 2*s.
   sizes <- do.call(rbind, lapply(c(3L, 5L, 10L, 30L, 50L), function(s) {
     fractions <- if (include_imbalance) c(0.5, 0.25) else 0.5
@@ -14,7 +14,6 @@ build_scenarios <- function(n_var, include_imbalance = TRUE, underdispersion_mod
       size_index = seq_len(nrow(sizes)),
       fold_change_min = 2,
       upregulated_fraction = c(0.25, 0.50),
-      library_size_sdlog = 0,
       outlier_fraction = c(0, 0.001, 0.01),
       sparsity = c(0, 0.10),
       batch_effect = c(1, 1.5),
@@ -35,13 +34,14 @@ build_scenarios <- function(n_var, include_imbalance = TRUE, underdispersion_mod
     grid$batch_fraction <- 0.5
     grid$de_fraction <- 0.3 # Replaced by DE selection before simulation.
     grid$n_diffexp <- as.integer(round(n_var * grid$de_fraction))
-    grid$de_setting_id <- do.call(paste, c(grid[c(
-      "fold_change_min", "upregulated_fraction", "library_size_sdlog",
-      "outlier_fraction", "sparsity", "batch_effect", "dispersion_scale"
-    )], sep = "_"))
+    # Preserve historical keys so fixed seeds and existing outputs can be reused.
+    grid$de_setting_id <- with(grid, paste(
+      fold_change_min, upregulated_fraction, 0,
+      outlier_fraction, sparsity, batch_effect, dispersion_scale, sep = "_"
+    ))
     grid$scenario_id <- paste0(model, "_factorial_g", grid$n_group1, "-", grid$n_group2,
       "_fc", grid$fold_change_min, "_up", grid$upregulated_fraction,
-      "_lib", grid$library_size_sdlog, "_out", grid$outlier_fraction,
+      "_lib0_out", grid$outlier_fraction,
       "_zero", grid$sparsity, "_batch", grid$batch_effect, "_disp", grid$dispersion_scale)
     grid
   }

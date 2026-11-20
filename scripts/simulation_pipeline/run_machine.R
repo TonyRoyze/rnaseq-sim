@@ -7,6 +7,9 @@ source('scripts/simulation_pipeline/machine_config.R')
 source('scripts/shared/version.R')
 source('scripts/simulation_pipeline/resume.R')
 source('scripts/simulation_pipeline/progress.R')
+source('scripts/shared/pipeline_logging.R')
+start_pipeline_log()
+pipeline_context('machine launcher')
 args <- commandArgs(TRUE)
 if (any(args %in% c('--help','-h'))) {
   cat('Usage: Rscript scripts/simulation_pipeline/run_machine.R [--config config/machine.dcf] [--plan-only]\n')
@@ -75,11 +78,12 @@ tryCatch({
 worker_main <- function(row,cfg,simulation_args,root,project_root) {
   setwd(project_root)
   source('scripts/simulation_pipeline/resume.R', local=TRUE)
+  source('scripts/shared/pipeline_logging.R', local=TRUE)
   options(mc.cores=1L)
   rscript <- file.path(R.home('bin'),'Rscript')
   run <- function(script,args,log) {
-    code <- system2(rscript,c(shQuote(script),shQuote(args)),stdout=log,stderr=log)
-    if(code!=0) stop('Process failed; inspect ',log)
+    label <- sprintf('worker-%02d | jobs %.0f-%.0f | %s', row$worker, start, end, basename(script))
+    run_logged_process(rscript,c(shQuote(script),shQuote(args)),log,label)
   }
   tryCatch({
     worker_root <- file.path(root,sprintf('worker-%02d',row$worker))
@@ -98,7 +102,8 @@ worker_main <- function(row,cfg,simulation_args,root,project_root) {
       run('scripts/simulation_counts/run_batch.R',c(simulation_args,'--parameter-cache-dir',file.path(root,'parameters'),'--output',input,
           '--job-start',as.character(start),'--job-end',as.character(end)),file.path(batch,'generation.log'))
       files <- list.files(input,pattern='-rep[0-9]+-n[0-9]+-seed[0-9]+-ref[[:xdigit:]]{8}\\.rds$',recursive=TRUE,full.names=TRUE)
-      if(length(files)!=end-start+1) stop('Missing generated datasets; inspect ',batch)
+      if(length(files)!=end-start+1) stop(sprintf(
+        'Expected %.0f generated datasets, found %d | %s', end-start+1, length(files), batch))
       if(cfg$Stage=='both') {
         run('scripts/de_analysis/analyze_batch.R',c('--input',input,'--output',output,
              '--profile',cfg$Profile,'--methods',paste(cfg$Methods,collapse=','),'--no-restore'),file.path(batch,'analysis.log'))
@@ -111,14 +116,25 @@ worker_main <- function(row,cfg,simulation_args,root,project_root) {
       start <- end+1
     }
     list(worker=row$worker,success=TRUE,error='')
-  },error=function(e) list(worker=row$worker,success=FALSE,error=conditionMessage(e)))
+  },error=function(e) {
+    pipeline_status('WORKER FAILED', sprintf('worker-%02d | pid=%d | %s',
+                                             row$worker, Sys.getpid(), conditionMessage(e)))
+    list(worker=row$worker,success=FALSE,error=conditionMessage(e))
+  })
 }
 run_pool <- function() {
   on.exit(unlink(lock,recursive=TRUE),add=TRUE)
   cl <- parallel::makePSOCKcluster(nrow(ranges),outfile=file.path(root,'workers.log'))
-  on.exit(parallel::stopCluster(cl),add=TRUE)
-  parallel::parLapply(cl,lapply(seq_len(nrow(ranges)),function(i) ranges[i,,drop=FALSE]),
-    worker_main,cfg=cfg,simulation_args=simulation_args,root=root,project_root=getwd())
+  on.exit(tryCatch(parallel::stopCluster(cl), error=function(e) {
+    pipeline_status('POOL CLEANUP ERROR', conditionMessage(e))
+  }),add=TRUE)
+  tryCatch(parallel::parLapply(cl,lapply(seq_len(nrow(ranges)),function(i) ranges[i,,drop=FALSE]),
+    worker_main,cfg=cfg,simulation_args=simulation_args,root=root,project_root=getwd()),
+    error=function(e) {
+      message <- sprintf('%s | worker log: %s', conditionMessage(e), file.path(root,'workers.log'))
+      pipeline_status('POOL ERROR', message)
+      stop(message, call.=FALSE)
+    })
 }
 results <- run_pool()
 cat('\nFINAL SUMMARY: recorded progress after workers stopped\n')

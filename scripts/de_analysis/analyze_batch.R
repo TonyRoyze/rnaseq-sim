@@ -10,12 +10,13 @@ project_root <- normalizePath(file.path(dirname(script_path), "../.."), mustWork
 setwd(project_root)
 source("scripts/shared/pipeline_logging.R")
 start_pipeline_log()
+pipeline_context("analysis startup")
 
 source("scripts/shared/version.R")
 
 parse_args <- function(args) {
-  opts <- list(input = paste0("results/custom_simulation_v", simulation_version),
-               output = "results/custom_simulation_analysis",
+  opts <- list(input = paste0("results/custom_simulation_v", simulation_version, "_gamma_count"),
+               output = "results/custom_simulation_analysis_gamma_count",
                shard_index = 1L, shard_count = 1L,
                profile = "core", methods = NULL, restore = TRUE, plan_only = FALSE)
   if ("--help" %in% args || "-h" %in% args) {
@@ -69,10 +70,15 @@ if (is.null(options)) quit(status = 0L)
 source("scripts/de_analysis/method_settings.R")
 settings <- select_method_settings(make_method_settings(options$profile), options$methods)
 if (!options$plan_only) {
+  pipeline_context("analysis renv activation")
   source("renv/activate.R")
-  if (options$restore) renv::restore(prompt = FALSE)
+  if (options$restore) {
+    pipeline_context("analysis renv restore")
+    renv::restore(prompt = FALSE)
+  }
 }
 
+pipeline_context("analysis input discovery and planning")
 resolve_path <- function(path) {
   is_absolute <- grepl("^(~|/|[A-Za-z]:[/\\\\]|\\\\\\\\)", path)
   if (is_absolute) path.expand(path) else file.path(project_root, path)
@@ -211,9 +217,12 @@ for (i in seq_len(nrow(jobs))) {
     job_started_at <- proc.time()[["elapsed"]]
     cat(sprintf("RUN [%d/%d] %s / %s / %s\n", i, nrow(jobs),
                 job$dataset_id, job$method, job$setting_id))
+    flush(stdout())
     flush.console()
+    pipeline_context(sprintf("analysis job %d/%d | %s / %s / %s",
+                             i, nrow(jobs), job$dataset_id, job$method, job$setting_id))
 
-    run_error <- tryCatch({
+    run_error <- tryCatch(log_pipeline_errors({
       if (!identical(last_dataset, job$dataset_id)) {
         dataset <- readRDS(job$input_file)
         if (is.null(dataset$simulated$dge) || is.null(dataset$simulated$truth$is_de)) {
@@ -251,7 +260,7 @@ for (i in seq_len(nrow(jobs))) {
       saveRDS(result, tmp, compress = "xz")
       if (!file.rename(tmp, output_path)) stop("Could not finalize analysis result.")
       NULL
-    }, error = function(e) e)
+    }), error = identity)
 
     if (inherits(run_error, "error")) {
       jobs$status[i] <- "failed"
@@ -267,11 +276,13 @@ for (i in seq_len(nrow(jobs))) {
       cat(sprintf("DONE %s | elapsed %.3f sec\n", basename(output_path),
                   proc.time()[["elapsed"]] - job_started_at))
     }
+    flush(stdout())
     flush.console()
   }
 
   completed_since_checkpoint <- completed_since_checkpoint + 1L
   if (completed_since_checkpoint >= manifest_checkpoint_every) {
+    pipeline_context(sprintf("analysis manifest checkpoint %d/%d", i, nrow(jobs)))
     write_manifest()
     cat(sprintf("CHECKPOINT [%d/%d] manifest saved; %d new results calculated, %d failed, %d existing skipped.\n",
                 i, nrow(jobs), analysis_counts["complete"], analysis_counts["failed"],
@@ -279,6 +290,7 @@ for (i in seq_len(nrow(jobs))) {
     completed_since_checkpoint <- 0L
   }
 }
+pipeline_context("analysis final manifest")
 write_manifest()
 cat(sprintf("ANALYSIS SUMMARY: %d calculated, %d failed, %d existing results skipped.\n",
             analysis_counts["complete"], analysis_counts["failed"], analysis_counts["skipped"]))

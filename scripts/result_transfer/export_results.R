@@ -5,8 +5,10 @@ p <- normalizePath(sub('^--file=', '', grep('^--file=', a, value=TRUE)[1]))
 setwd(normalizePath(file.path(dirname(p), '../..')))
 source('scripts/shared/version.R')
 args <- commandArgs(TRUE)
-assignment_root <- 'results/assignments_100_v5'
-opts <- list(source=if (dir.exists(assignment_root)) assignment_root else paste0('results/custom_simulation_pipeline_v',simulation_version), destination=NULL)
+roots <- c('results/assignments_100_v5_gamma_count', 'results/assignments_100_v5',
+           paste0('results/custom_simulation_pipeline_v', simulation_version, c('_gamma_count', '')))
+existing <- roots[dir.exists(roots)]
+opts <- list(source=if (length(existing)) existing[1L] else roots[1L], destination=NULL)
 if (!length(args) || '--help' %in% args) {
   cat('Usage: Rscript scripts/result_transfer/export_results.R --destination "E:/RNA-results" [--source PATH]\nExports finalized analysis files from all config folders or a single config folder. Also supports the older shard/batch pipeline.\n')
   quit(status=0L)

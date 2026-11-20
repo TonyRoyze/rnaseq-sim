@@ -77,17 +77,16 @@ scenarios <- data.frame(
   scenario_id = c(
     "nb_baseline", "nb_sample5", "nb_high_dispersion", "nb_outlier_sparse",
     "nb_weaker_effect", "poisson_baseline", "poisson_sample5",
-    "poisson_library_spread", "poisson_direction_skew", "poisson_batch_sparse"
+    "poisson_extra_zeros", "poisson_direction_skew", "poisson_batch_outliers_sparse"
   ),
   count_model = c(rep("negative_binomial", 5), rep("poisson", 5)),
   s = c(3, 5, 3, 3, 5, 3, 5, 3, 3, 5),
   de_fraction = c(0.30, 0.30, 0.30, 0.20, 0.10, 0.30, 0.30, 0.30, 0.10, 0.20),
   dispersion_scale = c(1, 1, 2, 1, 0.5, 1, 1, 1, 1, 1),
-  library_size_sdlog = c(0, 0, 0, 0, 0, 0, 0, 0.3, 0, 0.2),
   fold_change_min = c(2, 2, 2, 2, 1.25, 2, 2, 2, 1.5, 2),
   upregulated_fraction = c(0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.8, 0.5),
   outlier_fraction = c(0, 0, 0, 0.01, 0, 0, 0, 0, 0, 0.005),
-  sparsity = c(0, 0, 0, 0.10, 0, 0, 0, 0, 0, 0.10),
+  sparsity = c(0, 0, 0, 0.10, 0, 0, 0, 0.10, 0, 0.10),
   batch_effect = c(1, 1, 1, 1, 1, 1, 1, 1, 1, 1.5),
   batch_fraction = rep(0.5, 10),
   stringsAsFactors = FALSE
@@ -123,7 +122,6 @@ for (i in seq_len(nrow(scenarios))) {
     count_model = scenario$count_model,
     dispersion_estimator = "method_of_moments",
     dispersion_scale = scenario$dispersion_scale,
-    library_size_sdlog = scenario$library_size_sdlog,
     fold_change_min = scenario$fold_change_min,
     upregulated_fraction = scenario$upregulated_fraction,
     outlier_fraction = scenario$outlier_fraction,

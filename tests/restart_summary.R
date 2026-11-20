@@ -4,6 +4,7 @@ cfg <- read_machine_config('config/assignments_100/config-030.dcf')
 root <- tempfile('restart-summary-')
 dir.create(root)
 cfg$Output <- root
+cfg[['Underdispersion-Model']] <- 'generalized_poisson'
 cfg[['Job-Start']] <- 1; cfg[['Job-End']] <- 2
 cfg$Workers <- 2; cfg[['Jobs-Per-Batch']] <- 1
 config <- tempfile(fileext='.dcf')

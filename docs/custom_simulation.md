@@ -52,7 +52,6 @@ The runner generates the reduced **full factorial design**:
 - DE proportions: 0.05, 0.25, 0.75 (fixed mode crosses all three).
 - Exact DE fold-change magnitude: 2 (upregulated 2, downregulated 0.5).
 - Upregulated fraction among DE genes: 0.25, 0.50.
-- Library-size variation (sdlog): 0; all imposed library factors equal 1.
 - Outlier fraction: 0, 0.001, 0.01.
 - Extra-zero sparsity: 0, 0.10.
 - Batch-effect multiplier: 1, 1.5 (batch fraction stays 0.50).
@@ -332,16 +331,21 @@ flags (such as `--reference-mode`, `--n-var`, `--de-mode`, or
 
 ## Underdispersion extension
 
-The default factorial includes Generalized Poisson at target variance/mean
-ratios 0.2, 0.5, and 0.81, alongside Poisson at 1 and the three NB scales.
-Select `--underdispersion-model generalized_poisson` (default) or
-`--underdispersion-model com_poisson`. This selects one generator, not both;
-the total number of combinations is the same for either choice. The model is
-encoded in IDs and saved as `count_model` in datasets and status records.
-The Generalized-Poisson implementation uses base R only. The optional
-COM-Poisson dependency COMPoissonReg 0.8.2 is locked in renv.lock and restored
-and checked by the Windows setup script. Manual setup uses `renv::restore()`.
-Both choices are available in package-free `--plan-only` mode.
+The default factorial uses gamma-count for target variance-to-mean ratios
+0.2, 0.5, and 0.81. The alternatives are
+`--underdispersion-model generalized_poisson` and
+`--underdispersion-model com_poisson`. Each run selects one family for the
+underdispersed conditions, with the same number of combinations. Dataset IDs
+and the saved `count_model` field identify the selected family.
+
+Gamma-count and generalized-Poisson generation use base R. COM-Poisson uses
+COMPoissonReg 0.8.2 from the lockfile. All three support package-free
+`--plan-only`.
+
+Gamma-count uses a gamma renewal-process CDF and binary search to sample
+counts. It checks and calibrates both moments to within 0.1% for smaller
+means. For large means and variances it uses a renewal approximation for
+the parameters, including corrections for the leading mean and variance terms.
 There are 285,768 combinations per replicate with imbalance, or 28,576,800
 with 100 replicates and one reference. Earlier totals above describe the
 Poisson/NB subset only. Underdispersion adds 122,472 combinations per replicate.
@@ -350,9 +354,9 @@ COM-Poisson parameters are calibrated numerically for each conditional expected
 count to match E(Y)=mu and Var(Y)=k*mu; parameters are not interchangeable with
 NB dispersion scales. This is substantially slower than Poisson/NB generation.
 The target applies before optional outliers and zero insertion, and conditional
-on group, library size, and batch. Those modifications can increase the
+on group and batch. Those modifications can increase the
 observed variance/mean ratio. For a clean dispersion comparison, use zero
-outlier fraction, zero sparsity, and fixed library/batch multipliers.
+outlier fraction, zero sparsity, and a batch multiplier of 1.
 For integer-valued counts with noninteger mean mu, variance cannot be less
 than frac(mu)*(1-frac(mu)). Infeasible targets and failed numerical calibrations
 fail explicitly and are recorded in the status log.
@@ -372,7 +376,7 @@ explicitly to bound numerical work. A zero mean produces zero counts.
 
 ```sh
 Rscript scripts/simulation_counts/run_batch.R --replicates 100 \
-  --shard-count 4 --shard-index 1 --underdispersion-model generalized_poisson
+  --shard-count 4 --shard-index 1 --underdispersion-model gamma_count
 
 Rscript scripts/simulation_counts/run_batch.R --plan-only \
   --underdispersion-model com_poisson

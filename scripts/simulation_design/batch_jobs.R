@@ -191,6 +191,14 @@ append_status <- function(record, path) {
   for (attempt in seq_len(3L)) {
     written <- tryCatch({
       has_header <- file.exists(path) && isTRUE(file.info(path)$size > 0)
+      if (has_header) {
+        # Older runs can have retired columns. Keep their existing CSV layout.
+        columns <- names(utils::read.csv(path, nrows = 0L, check.names = FALSE))
+        if (anyDuplicated(columns) || !all(names(record) %in% columns))
+          stop("Existing status.csv header does not match the current record.")
+        record[setdiff(columns, names(record))] <- NA
+        record <- record[columns]
+      }
       utils::write.table(record, file = path, append = has_header, sep = ',',
                          row.names = FALSE, col.names = !has_header, na = '', qmethod = 'double')
       TRUE

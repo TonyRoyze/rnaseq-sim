@@ -20,7 +20,7 @@ available:
 
 - `helpers.R`: shared scalar validation and null fallback helper.
 - `estimate_parameters.R`: parameter estimation from real count data.
-- `prepare_design.R`: validates settings and builds sample, batch, library,
+- `prepare_design.R`: validates settings and builds sample, batch,
   dispersion, and DE-effect values.
 - `generate_counts.R`: draws Poisson or negative-binomial counts and applies
   outliers and extra zero counts.
@@ -30,7 +30,7 @@ available:
 ## Example
 
 Version 5.3 caps sampled baseline gene means at 180,000 for every count model,
-before fold-change, library-size, and batch multipliers. Reference data and
+before fold-change and batch multipliers. Reference data and
 cached parameter estimates retain their original values. `sim$truth` records
 `baseline_mean_original`, `baseline_mean`, and `baseline_mean_capped` for each
 sampled gene; `sim$parameters$baseline_mean_cap` records the threshold.
@@ -50,7 +50,6 @@ sim <- simulate_custom_counts(
   count_model = "negative_binomial",
   dispersion_estimator = "method_of_moments", # or "edgeR"
   dispersion_scale = 1.5,       # multiply estimated dispersions
-  library_size_sdlog = 0.25,    # sample-to-sample library factor spread
   fold_change_min = 1.5,        # minimum DE fold-change magnitude
   upregulated_fraction = 0.6,   # fraction of DE genes going up in group 2
   outlier_fraction = 0.001,     # fraction of individual counts affected
@@ -62,7 +61,7 @@ sim <- simulate_custom_counts(
 
 sim$dge       # edgeR DGEList; simulated counts and sample metadata
 sim$truth     # gene-level DE labels, directions, and fold changes
-sim$samples   # condition, batch, and library factors by sample
+sim$samples   # condition and batch by sample
 sim$parameters
 sim$parameters$dispersion_estimates # both estimates for each simulated gene
 ```
@@ -74,6 +73,6 @@ are saved beside them for direct inspection. For negative-binomial simulations,
 `dispersion_used` records the selected estimate after applying `dispersion_scale`.
 
 Set `count_model = "poisson"` to remove the negative-binomial dispersion
-component. You can pass explicit per-sample `library_size_factors` or `batch`
-labels instead of having the simulator generate them. The batch effect is
+component. You can pass explicit `batch` labels instead of having the
+simulator generate them. The batch effect is
 applied to the second batch level; generated labels are `batch1` and `batch2`.

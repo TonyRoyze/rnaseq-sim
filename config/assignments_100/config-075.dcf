@@ -4,7 +4,7 @@ Job-Start: 68041
 Job-End: 102060
 Workers: 6
 Jobs-Per-Batch: 20
-Output: results/assignments_100_v5/config-075-DSS
+Output: results/assignments_100_v5_gamma_count/config-075-DSS
 Stage: both
 Profile: core
 Replicates: 30
@@ -13,7 +13,7 @@ Base-Seed: 20261024
 Reference-Mode: random
 Reference: data/DGElist_BRCA.rds
 Dispersion-Estimator: method_of_moments
-Underdispersion-Model: generalized_poisson
+Underdispersion-Model: gamma_count
 Include-Imbalance: true
 DE-Mode: fixed
 DE-Proportions: 0.05,0.25,0.75

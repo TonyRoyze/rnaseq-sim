@@ -32,19 +32,22 @@ generate_simulated_count_matrix <- function(
   expected <- outer(design$baseline_mean, rep(1, design$n_samples))
   group2 <- design$condition == "group2"
   expected[, group2] <- expected[, group2, drop = FALSE] * design$fold_change
-  expected <- sweep(expected, 2, design$library_size_factors, `*`)
   expected <- sweep(expected, 2, design$batch_multiplier, `*`)
 
-  for (sample_index in seq_len(design$n_samples)) {
-    counts[, sample_index] <- if (count_model == "generalized_poisson") {
-      r_underdispersed_gp(expected[, sample_index], design$variance_mean_ratio)
-    } else if (count_model == "com_poisson") {
-      r_underdispersed_cmp(expected[, sample_index], design$variance_mean_ratio)
-    } else if (count_model == "poisson") {
-      stats::rpois(design$n_var, lambda = expected[, sample_index])
-    } else {
-      stats::rnbinom(design$n_var, size = 1 / design$dispersion,
-                     mu = expected[, sample_index])
+  if (count_model == "gamma_count") {
+    counts[] <- r_underdispersed_gamma_count(as.vector(expected), design$variance_mean_ratio)
+  } else {
+    for (sample_index in seq_len(design$n_samples)) {
+      counts[, sample_index] <- if (count_model == "generalized_poisson") {
+        r_underdispersed_gp(expected[, sample_index], design$variance_mean_ratio)
+      } else if (count_model == "com_poisson") {
+        r_underdispersed_cmp(expected[, sample_index], design$variance_mean_ratio)
+      } else if (count_model == "poisson") {
+        stats::rpois(design$n_var, lambda = expected[, sample_index])
+      } else {
+        stats::rnbinom(design$n_var, size = 1 / design$dispersion,
+                       mu = expected[, sample_index])
+      }
     }
   }
 

@@ -1,11 +1,15 @@
 source('scripts/simulation_pipeline/resume.R')
 source('scripts/simulation_pipeline/machine_config.R')
 cfg <- read_machine_config('config/assignments_100/config-030.dcf')
+cfg[['Underdispersion-Model']] <- 'generalized_poisson'
+cfg$Output <- sub('assignments_100_v5_gamma_count/', 'assignments_100_v5/', cfg$Output)
 saved <- list(version='5.2', config=cfg)
 saved$config$Output <- sub('assignments_100_v5/', 'assignments_100_v5.2/', cfg$Output)
 stopifnot(check_assignment_resume(saved, cfg, '5.3'))
 stopifnot(!check_assignment_resume(list(version='5.3',config=cfg), cfg, '5.3'))
 fail <- function(expr) stopifnot(inherits(try(expr, silent=TRUE), 'try-error'))
+changed_model <- cfg; changed_model[['Underdispersion-Model']] <- 'gamma_count'
+fail(check_assignment_resume(saved, changed_model, '5.3'))
 changed <- cfg; changed[['Base-Seed']] <- cfg[['Base-Seed']]+1
 fail(check_assignment_resume(saved, changed, '5.3'))
 saved$version <- '5.1'; fail(check_assignment_resume(saved, cfg, '5.3'))

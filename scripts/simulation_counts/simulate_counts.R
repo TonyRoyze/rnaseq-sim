@@ -5,12 +5,10 @@ simulate_custom_counts <- function(
     s = 10,
     n_var = 10000,
     n_diffexp = 3000,
-    count_model = c("negative_binomial", "poisson", "com_poisson", "generalized_poisson"),
+    count_model = c("negative_binomial", "poisson", "gamma_count", "com_poisson", "generalized_poisson"),
     dispersion_scale = 1,
     dispersion_source = c("total", "group"),
     dispersion_estimator = c("method_of_moments", "edgeR"),
-    library_size_factors = NULL,
-    library_size_sdlog = 0,
     fold_change_min = 2,
     fold_change_excess_rate = 1,
     upregulated_fraction = 0.5,
@@ -41,15 +39,13 @@ simulate_custom_counts <- function(
     params = params, s = s, n_var = n_var, n_diffexp = n_diffexp,
     count_model = count_model, dispersion_scale = dispersion_scale,
     dispersion_source = dispersion_source, dispersion_estimator = dispersion_estimator,
-    library_size_factors = library_size_factors,
-    library_size_sdlog = library_size_sdlog,
     fold_change_min = fold_change_min,
     fold_change_excess_rate = fold_change_excess_rate,
     upregulated_fraction = upregulated_fraction,
     batch = batch, batch_fraction = batch_fraction, batch_effect = batch_effect,
     group_sizes = group_sizes, fixed_fold_change = fixed_fold_change
   )
-  if (count_model %in% c("com_poisson", "generalized_poisson")) {
+  if (count_model %in% c("gamma_count", "com_poisson", "generalized_poisson")) {
     validate_simulation_scalar(variance_mean_ratio, "variance_mean_ratio", 0, 1, FALSE)
     if (variance_mean_ratio >= 1) stop("Underdispersion requires k < 1.")
   }
@@ -63,12 +59,10 @@ simulate_custom_counts <- function(
   samples <- data.frame(
     group = design$condition,
     batch = design$batch,
-    library_factor = design$library_size_factors,
     row.names = colnames(counts)
   )
   dge <- edgeR::DGEList(counts = counts, group = design$condition)
   dge$samples$batch <- design$batch
-  dge$samples$library.factor <- design$library_size_factors
 
   truth <- data.frame(
     gene = rownames(counts),
@@ -99,12 +93,11 @@ simulate_custom_counts <- function(
       s = design$s, group_sizes = design$group_sizes, n_samples = design$n_samples,
       n_var = design$n_var, n_diffexp = design$n_diffexp,
       baseline_mean_cap = design$baseline_mean_cap,
-      count_model = count_model, variance_mean_ratio = if (count_model %in% c("com_poisson", "generalized_poisson")) variance_mean_ratio else if (count_model == "poisson") 1 else NA_real_,
+      count_model = count_model, variance_mean_ratio = if (count_model %in% c("gamma_count", "com_poisson", "generalized_poisson")) variance_mean_ratio else if (count_model == "poisson") 1 else NA_real_,
       dispersion = design$dispersion,
       dispersion_scale = dispersion_scale, dispersion_source = dispersion_source,
       dispersion_estimator = dispersion_estimator,
       dispersion_estimates = dispersion_estimates,
-      library_size_factors = design$library_size_factors,
       fold_change = design$fold_change, fixed_fold_change = fixed_fold_change,
       outlier_fraction = outlier_fraction, sparsity = sparsity,
       batch_effect = batch_effect, batch_multiplier = design$batch_multiplier,
