@@ -6,6 +6,7 @@ setwd(normalizePath(file.path(dirname(p), '../..')))
 source('scripts/shared/version.R')
 source('scripts/shared/check_paths.R')
 source('scripts/shared/pipeline_logging.R')
+source('scripts/simulation_pipeline/resume.R')
 args <- commandArgs(TRUE)
 if ('--version' %in% args) {
   cat('Custom simulation pipeline version', simulation_version, '\n')
@@ -64,6 +65,7 @@ if (file.exists(config)) {
 if (!file.exists(config)) saveRDS(args, config)
 index <- 1L
 skipped_batches <- 0L
+incomplete <- 0L
 repeat {
   batch <- file.path(root, sprintf('batch-%06d', index))
   marker <- file.path(batch, 'complete.rds')
@@ -100,8 +102,14 @@ repeat {
   pipeline_status('ANALYZE', paste(length(datasets), 'datasets; run missing method results'))
   run('scripts/de_analysis/analyze_batch.R', c('--input', input, '--output', output, '--no-restore'))
   manifests <- list.files(output, pattern='^manifest.csv$', recursive=TRUE, full.names=TRUE)
-  if (!length(manifests) || any(vapply(manifests, function(path) any(read.csv(path)$status != 'complete'), logical(1))))
-    stop('Analysis incomplete in batch ', index, '; keeping datasets for retry.')
+  if (!length(manifests) || !all(vapply(manifests, function(path) {
+    analysis_manifest_complete(read.csv(path))
+  }, logical(1)))) {
+    incomplete <- incomplete + 1L
+    pipeline_status('ANALYSIS RETRY NEEDED', batch)
+    index <- index + 1L
+    next
+  }
   files <- list.files(file.path(output, 'results'), pattern='\\.rds$', recursive=TRUE, full.names=TRUE)
   pipeline_status('COMPACT', paste(length(files), 'analysis result files'))
   for (path in files) {
@@ -119,4 +127,8 @@ repeat {
 }
 
 if (skipped_batches > 0L) pipeline_status('RESUME', paste(skipped_batches, 'completed batches skipped'))
+if (incomplete > 0L) {
+  pipeline_status('RETRY NEEDED', sprintf('%d analysis batches need retry', incomplete))
+  quit(status = 1L)
+}
 pipeline_status('FINISHED', paste('Worker', shard_index, 'finished all assigned batches'))

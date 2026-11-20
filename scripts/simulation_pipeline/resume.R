@@ -10,6 +10,13 @@ check_assignment_resume <- function(saved, cfg, version) {
   !identical(saved$version, version)
 }
 
+# Unsupported settings are terminal without result files. Failed settings
+# remain retryable and keep the batch's generated inputs eligible for reuse.
+analysis_manifest_complete <- function(rows) {
+  nrow(rows) > 0L && "status" %in% names(rows) &&
+    all(rows$status %in% c("complete", "unsupported"))
+}
+
 # A marker alone cannot certify that result files still exist. Rebase saved
 # absolute manifest paths after the assignment folder has been renamed/moved.
 assignment_batch_complete <- function(batch, start, end, stage) {
@@ -24,9 +31,10 @@ assignment_batch_complete <- function(batch, start, end, stage) {
     if (!length(manifests)) stop('Completed batch is missing analysis manifests: ', batch)
     for (path in manifests) {
       rows <- read.csv(path, stringsAsFactors=FALSE)
-      if (!nrow(rows) || !all(c('status','output_file') %in% names(rows)) ||
-          anyNA(rows$status) || any(rows$status != 'complete'))
+      if (!analysis_manifest_complete(rows) || !'output_file' %in% names(rows))
         stop('Completed batch has an incomplete analysis manifest: ', path)
+      rows <- rows[rows$status == "complete", , drop = FALSE]
+      if (!nrow(rows)) next
       old <- chartr("\\", "/", rows$output_file)
       relative <- sub('^.*/analysis/', '', old)
       rebased <- ifelse(relative != old, file.path(batch, 'analysis', relative), rows$output_file)

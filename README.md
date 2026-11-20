@@ -56,3 +56,19 @@ source("scripts/de_analysis/method_settings.R")
 ```
 
 See [docs](docs/README.md) for the full runbook, module map and future-agent notes.
+
+### Sparse normalization outcomes
+
+If no gene has positive counts in every sample, analysis records the following
+settings as `unsupported` with the reason in the analysis manifest:
+
+- RLE for edgeR LRT, edgeR QLF, voom, Wilcoxon, and T.test
+- Default AH2010 normalization for NBPSeq
+- Geometric normalization for ABSSeq
+- Legacy DESeq size-factor estimation and DESeq2 ratio size-factor estimation
+
+These settings count toward batch completion and produce no result RDS.
+Other settings still run on the same dataset. Unexpected analysis errors stay
+`failed`. The runner continues to later batches and leaves the affected
+inputs available for retry. When summarizing the benchmark, report unsupported
+counts against all assigned replicates and compute metrics from completed fits.

@@ -26,7 +26,7 @@ parse_args <- function(args) {
       "  --input PATH        Generated simulation directory",
       "  --output PATH       Analysis result directory",
       "  --methods LIST      Comma-separated method names (default: all)",
-      "  --profile NAME      core or quick (default: core)",
+      "  --profile NAME      core, quick, or dispersion-pilot (default: core)",
       "  --shard-index N     Worker shard, starting at 1",
       "  --shard-count N     Number of workers",
       "  --no-restore        Skip renv::restore()",
@@ -61,7 +61,8 @@ parse_args <- function(args) {
   if (is.na(opts$shard_index) || is.na(opts$shard_count) ||
       opts$shard_index < 1L || opts$shard_count < 1L ||
       opts$shard_index > opts$shard_count) stop("Invalid shard settings.")
-  if (!opts$profile %in% c("core", "quick")) stop("profile must be 'core' or 'quick'.")
+  if (!opts$profile %in% c("core", "quick", "dispersion-pilot"))
+    stop("profile must be 'core', 'quick', or 'dispersion-pilot'.")
   opts
 }
 
@@ -198,7 +199,7 @@ write_manifest <- function() {
 
 manifest_checkpoint_every <- 10000L
 completed_since_checkpoint <- 0L
-analysis_counts <- c(complete=0L, failed=0L, skipped=0L)
+analysis_counts <- c(complete=0L, failed=0L, skipped=0L, unsupported=0L)
 last_dataset <- NULL
 dataset <- NULL
 cat(sprintf("Prepared %d analysis jobs; manifest checkpoints every %d jobs.\n",
@@ -237,29 +238,32 @@ for (i in seq_len(nrow(jobs))) {
       truth <- truth[keep]
       analysis_dge <- simulated$dge[keep, , keep.lib.sizes = FALSE]
       analysis_seed <- as.integer(dataset$seed + job$setting_index * 17L)
-      p <- run_method_setting(analysis_dge, spec, seed = analysis_seed)
-      gene_ids <- rownames(analysis_dge$counts)
-      truth <- truth[match(names(p), gene_ids)]
-      metrics <- summarize_method_result(p, truth)
-      result <- list(
-        dataset_id = job$dataset_id,
-        input_file = job$input_file,
-        simulation_scenario = dataset$scenario,
-        simulation_seed = dataset$seed,
-        analysis_seed = analysis_seed,
-        method = job$method,
-        setting_id = spec$setting_id,
-        setting_args = spec$args,
-        score_type = if (job$method == "NOISeq") "1 - NOISeq probability (ranking score)" else "p-value",
-        gene_results = data.frame(gene = names(p), p_value = p,
-                                  is_de = truth, adjusted_p_value = stats::p.adjust(p, "BH")),
-        metrics = metrics
-      )
-      dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
-      tmp <- paste0(output_path, ".", Sys.getpid(), ".tmp")
-      saveRDS(result, tmp, compress = "xz")
-      if (!file.rename(tmp, output_path)) stop("Could not finalize analysis result.")
-      NULL
+      unsupported <- sparse_normalization_reason(analysis_dge$counts, spec)
+      if (!is.null(unsupported)) unsupported else {
+        p <- run_method_setting(analysis_dge, spec, seed = analysis_seed)
+        gene_ids <- rownames(analysis_dge$counts)
+        truth <- truth[match(names(p), gene_ids)]
+        metrics <- summarize_method_result(p, truth)
+        result <- list(
+          dataset_id = job$dataset_id,
+          input_file = job$input_file,
+          simulation_scenario = dataset$scenario,
+          simulation_seed = dataset$seed,
+          analysis_seed = analysis_seed,
+          method = job$method,
+          setting_id = spec$setting_id,
+          setting_args = spec$args,
+          score_type = if (job$method == "NOISeq") "1 - NOISeq probability (ranking score)" else "p-value",
+          gene_results = data.frame(gene = names(p), p_value = p,
+                                    is_de = truth, adjusted_p_value = stats::p.adjust(p, "BH")),
+          metrics = metrics
+        )
+        dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
+        tmp <- paste0(output_path, ".", Sys.getpid(), ".tmp")
+        saveRDS(result, tmp, compress = "xz")
+        if (!file.rename(tmp, output_path)) stop("Could not finalize analysis result.")
+        NULL
+      }
     }), error = identity)
 
     if (inherits(run_error, "error")) {
@@ -270,6 +274,11 @@ for (i in seq_len(nrow(jobs))) {
                   job$method, spec$setting_id,
                   proc.time()[["elapsed"]] - job_started_at,
                   conditionMessage(run_error)))
+    } else if (is.character(run_error)) {
+      jobs$status[i] <- "unsupported"
+      jobs$error[i] <- run_error
+      analysis_counts["unsupported"] <- analysis_counts["unsupported"] + 1L
+      cat(sprintf("UNSUPPORTED %s/%s | %s\n", job$method, spec$setting_id, run_error))
     } else {
       jobs$status[i] <- "complete"
       analysis_counts["complete"] <- analysis_counts["complete"] + 1L
@@ -294,5 +303,6 @@ pipeline_context("analysis final manifest")
 write_manifest()
 cat(sprintf("ANALYSIS SUMMARY: %d calculated, %d failed, %d existing results skipped.\n",
             analysis_counts["complete"], analysis_counts["failed"], analysis_counts["skipped"]))
+cat(sprintf("Unsupported normalization settings: %d.\n", analysis_counts["unsupported"]))
 cat("Finished analysis shard ", options$shard_index, " of ",
     options$shard_count, ". Manifest: ", manifest_path, "\n", sep = "")

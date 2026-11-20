@@ -16,6 +16,7 @@ latest_progress_rows <- function(paths, keys) {
 progress_counts <- function(rows) {
   status <- unlist(lapply(rows, function(x) x$status), use.names = FALSE)
   c(complete = sum(status == 'complete', na.rm = TRUE),
+    unsupported = sum(status == 'unsupported', na.rm = TRUE),
     failed = sum(status == 'failed', na.rm = TRUE),
     running = sum(status == 'running', na.rm = TRUE))
 }
@@ -68,13 +69,14 @@ show_progress <- function(root, expected = NA_real_, worker_plan = NULL,
     cat(sprintf('Remaining datasets (including partial batches): %.0f\n', max(0, expected - total)))
   } else cat(sprintf('Finished datasets (whole batches): %.0f\n', total))
   if (!length(snapshot)) cat('No worker folders found yet.\n')
-  cat('Worker       Datasets done/planned  Batches done/planned  Generated  GenFail  AnalysisOK  AnalysisFail\n')
+  cat('Worker       Datasets done/planned  Batches done/planned  Generated  GenFail  AnalysisOK  AnalysisFail  Unsupported\n')
   for (x in snapshot) {
     dataset_count <- if (is.finite(x$planned_jobs)) sprintf('%.0f/%.0f', x$finished, x$planned_jobs) else sprintf('%.0f', x$finished)
     batch_count <- if (is.finite(x$planned_batches)) sprintf('%.0f/%.0f', x$batches, x$planned_batches) else sprintf('%d', x$batches)
-    cat(sprintf('%-12s %21s %20s %10d %8d %11d %13d\n',
+    cat(sprintf('%-12s %21s %20s %10d %8d %11d %13d %12d\n',
       x$worker, dataset_count, batch_count, x$generation['complete'],
-      x$generation['failed'], x$analysis['complete'], x$analysis['failed']))
+      x$generation['failed'], x$analysis['complete'], x$analysis['failed'],
+      x$analysis['unsupported']))
     if (nzchar(x$latest)) cat('  Latest: ', x$latest, '\n', sep = '')
     if (x$unreadable) cat('  Note: ', x$unreadable, ' unreadable/incomplete status files; retry next refresh.\n', sep = '')
   }

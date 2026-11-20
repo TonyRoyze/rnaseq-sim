@@ -95,6 +95,7 @@ worker_main <- function(row,cfg,simulation_args,root,project_root) {
   tryCatch({
     worker_root <- file.path(root,sprintf('worker-%02d',row$worker))
     dir.create(worker_root,recursive=TRUE,showWarnings=FALSE)
+    incomplete <- 0L
     start <- row$start
     while(start<=row$end) {
       end <- min(start+cfg[['Jobs-Per-Batch']]-1,row$end)
@@ -115,14 +116,20 @@ worker_main <- function(row,cfg,simulation_args,root,project_root) {
         run('scripts/de_analysis/analyze_batch.R',c('--input',input,'--output',output,
              '--profile',cfg$Profile,'--methods',paste(cfg$Methods,collapse=','),'--no-restore'),file.path(batch,'analysis.log'))
         manifests <- list.files(output,pattern='^manifest.csv$',recursive=TRUE,full.names=TRUE)
-        if(!length(manifests) || any(vapply(manifests,function(p) {
-          rows <- read.csv(p); !nrow(rows) || any(is.na(rows$status) | rows$status!='complete')
-        },logical(1)))) stop('Analysis incomplete; inspect ',batch)
+        if (!length(manifests) || !all(vapply(manifests, function(path) {
+          analysis_manifest_complete(read.csv(path))
+        }, logical(1)))) {
+          incomplete <- incomplete + 1L
+          pipeline_status('ANALYSIS RETRY NEEDED', batch)
+          start <- end + 1
+          next
+        }
       }
       saveRDS(list(start=start,end=end,stage=cfg$Stage),file.path(batch,'complete.rds'))
       start <- end+1
     }
-    list(worker=row$worker,success=TRUE,error='')
+    list(worker=row$worker, success=incomplete == 0L,
+         error=sprintf('%d analysis batches need retry', incomplete))
   },error=function(e) {
     pipeline_status('WORKER FAILED', sprintf('worker-%02d | pid=%d | %s',
                                              row$worker, Sys.getpid(), conditionMessage(e)))

@@ -1,7 +1,7 @@
 # Setting profiles and method adapters for the existing DE method set.
-# Each method gets a baseline plus normalization-only variants.
+# The dispersion pilot is opt-in and leaves the existing profiles intact.
 
-make_method_settings <- function(profile = c("core", "quick")) {
+make_method_settings <- function(profile = c("core", "quick", "dispersion-pilot")) {
   profile <- match.arg(profile)
   settings <- list()
   add <- function(method, id, args = list(), baseline = FALSE, quick = FALSE) {
@@ -27,6 +27,17 @@ make_method_settings <- function(profile = c("core", "quick")) {
 
   base <- list(fit_type = NULL)
   add("DESeq", "default", base, baseline = TRUE)
+
+  if (profile == "dispersion-pilot") {
+    deseq2_args <- settings[[1L]]$args
+    deseq2_args$fit_type <- NULL
+    deseq2_args$gene_wise_dispersion <- TRUE
+    add("DESeq2", "dispersion-gene-wise", deseq2_args)
+    deseq2_args$size_factor <- "poscounts"
+    add("DESeq2", "dispersion-gene-wise_size_factor-poscounts", deseq2_args)
+    add("DESeq", "fit_type-local_method-pooled", list(fit_type = "local", method = "pooled"))
+    return(settings)
+  }
 
   for (method in c("edgeR.lrt", "edgeR.qlf")) {
     base <- list(norm_method = "TMM", robust = FALSE)
@@ -85,6 +96,25 @@ make_method_settings <- function(profile = c("core", "quick")) {
   settings
 }
 
+# These settings use a geometric-mean reference that needs an all-positive gene.
+sparse_normalization_reason <- function(counts, setting) {
+  method <- setting$method
+  args <- setting$args
+  requires_positive_gene <-
+    (method %in% c("edgeR.lrt", "edgeR.qlf", "voom", "Wilcoxon", "T.test") &&
+       identical(args$norm_method, "RLE")) ||
+    (method == "NBPSeq" && identical(args$norm_method, "AH2010")) ||
+    (method == "ABSSeq" && identical(args$norm_method, "geometric")) ||
+    method == "DESeq" ||
+    (method == "DESeq2" && identical(args$size_factor, "ratio"))
+  if (requires_positive_gene && nrow(counts) > 0L &&
+      !anyNA(counts) && all(is.finite(counts) & counts >= 0) &&
+      !any(rowSums(counts > 0) == ncol(counts))) {
+    return("Normalization undefined: no gene has positive counts in every sample.")
+  }
+  NULL
+}
+
 normalization_factors <- function(counts, method) {
   y <- edgeR::DGEList(counts = counts)
   if (identical(method, "none")) {
@@ -112,9 +142,17 @@ run_method_setting <- function(dge, setting, seed = 1L) {
     coldata <- data.frame(group = groups, row.names = colnames(counts))
     dds <- DESeq2::DESeqDataSetFromMatrix(countData = counts, colData = coldata,
                                           design = ~ group)
-    dds <- DESeq2::DESeq(dds, fitType = args$fit_type, sfType = args$size_factor,
-                         minReplicatesForReplace = if (args$cooks_cutoff) 7 else Inf,
-                         quiet = TRUE)
+    if (isTRUE(args$gene_wise_dispersion)) {
+      dds <- DESeq2::estimateSizeFactors(dds, type = args$size_factor)
+      dds <- DESeq2::estimateDispersionsGeneEst(dds, quiet = TRUE)
+      dds <- DESeq2::`dispersions<-`(dds, value = S4Vectors::mcols(dds)$dispGeneEst)
+      # Keep Cook's filtering in results(), without DESeq()'s automatic refit.
+      dds <- DESeq2::nbinomWaldTest(dds, quiet = TRUE)
+    } else {
+      dds <- DESeq2::DESeq(dds, fitType = args$fit_type, sfType = args$size_factor,
+                           minReplicatesForReplace = if (args$cooks_cutoff) 7 else Inf,
+                           quiet = TRUE)
+    }
     result <- as.data.frame(DESeq2::results(
       dds, independentFiltering = args$independent_filtering,
       cooksCutoff = args$cooks_cutoff
@@ -123,10 +161,28 @@ run_method_setting <- function(dge, setting, seed = 1L) {
   } else if (method == "DESeq") {
     suppressPackageStartupMessages(library(locfit))
     cds <- DESeq::newCountDataSet(counts, groups)
-    cds <- DESeq::estimateSizeFactors(cds)
-    cds <- if (is.null(args$fit_type)) DESeq::estimateDispersions(cds) else
-      DESeq::estimateDispersions(cds, fitType = args$fit_type)
-    result <- DESeq::nbinomTest(cds, levels(groups)[1], levels(groups)[2])
+    stage <- "size factors"
+    result <- tryCatch(withCallingHandlers({
+      cds <- DESeq::estimateSizeFactors(cds)
+      factors <- DESeq::sizeFactors(cds)
+      if (any(!is.finite(factors) | factors <= 0))
+        stop("DESeq estimated non-finite or non-positive size factors.")
+      stage <- "dispersion estimation"
+      dispersion_args <- list(cds)
+      dispersion_args$fitType <- args$fit_type
+      dispersion_args$method <- args$method
+      cds <- do.call(DESeq::estimateDispersions, dispersion_args)
+      stage <- "negative binomial test"
+      DESeq::nbinomTest(cds, levels(groups)[1], levels(groups)[2])
+    }, warning = function(w) {
+      message("DESeq [", setting$setting_id, "] ", stage, " warning: ", conditionMessage(w))
+    }, error = function(e) {
+      origin <- conditionCall(e)
+      if (!is.null(origin))
+        message("DESeq [", setting$setting_id, "] ", stage, " failed in ", deparse1(origin))
+    }), error = function(e) {
+      stop("DESeq ", stage, ": ", conditionMessage(e), call. = FALSE)
+    })
     p <- result$pval
     names(p) <- result$id
   } else if (method %in% c("edgeR.lrt", "edgeR.qlf")) {
